@@ -1,0 +1,10 @@
+# ignore files with no extention:
+*
+!*/
+!*.*
+
+# normal ignores:
+.*
+*.exe
+nimcache
+models

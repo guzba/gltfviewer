@@ -1,0 +1,11 @@
+version       = "0.0.1"
+author        = "guzba"
+description   = "An in-progress GLTF viewer."
+license       = "MIT"
+srcDir        = "src"
+
+requires "nim >= 1.0.0"
+requires "chroma >= 0.0.1"
+requires "vmath >= 0.3.0"
+requires "opengl >= 1.2.3"
+requires "staticglfw >= 4.0.1"
