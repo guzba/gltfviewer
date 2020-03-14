@@ -43,6 +43,9 @@ type
     translation, scale: Vec3
 
   Scene* = ref object
+    nodes: seq[Natural]
+
+  Model* = ref object
     # All of the data that is indexed into
     buffers: seq[string]
     bufferViews: seq[BufferView]
@@ -50,9 +53,10 @@ type
     accessors: seq[Accessor]
     meshes: seq[Mesh]
     nodes: seq[Node]
+    scenes: seq[Scene]
 
-    # Scene properties
-    rootNodes: seq[Natural]
+    # Model properties
+    scene: Natural
 
 func size(componentType: GLenum): Natural =
   case componentType:
@@ -82,7 +86,7 @@ func componentCount(accessorKind: AccessorKind): Natural =
 
 proc draw(
   node: Node,
-  scene: Scene,
+  model: Model,
   shader: GLuint,
   transform, view, proj: Mat4
 ) =
@@ -93,15 +97,13 @@ proc draw(
     trs = transform * translate(node.translation) * scale(node.scale)
 
   for kid in node.kids:
-    scene.nodes[kid].draw(scene, shader, trs, view, proj)
+    model.nodes[kid].draw(model, shader, trs, view, proj)
 
   if node.mesh < 0:
     return
 
-  var model = trs
-
   var modelUniform = glGetUniformLocation(shader, "model")
-  var modelArray = model.toFloat32()
+  var modelArray = trs.toFloat32()
   glUniformMatrix4fv(modelUniform, 1, GL_FALSE, modelArray[0].addr)
 
   var viewUniform = glGetUniformLocation(shader, "view")
@@ -112,17 +114,17 @@ proc draw(
   var projArray = proj.toFloat32()
   glUniformMatrix4fv(projUniform, 1, GL_FALSE, projArray[0].addr)
 
-  for primative in scene.meshes[node.mesh].primatives:
-    let positionAccessor = scene.accessors[primative.attributes.position]
+  for primative in model.meshes[node.mesh].primatives:
+    let positionAccessor = model.accessors[primative.attributes.position]
 
     glBindVertexArray(primative.vertexArrayId)
 
     if primative.indices < 0:
       glDrawArrays(primative.mode, 0, positionAccessor.count.cint)
     else:
-      let indicesAccessor = scene.accessors[primative.indices]
+      let indicesAccessor = model.accessors[primative.indices]
       glBindBuffer(
-        scene.bufferViews[indicesAccessor.bufferView].target,
+        model.bufferViews[indicesAccessor.bufferView].target,
         indicesAccessor.bufferId
       )
       glDrawElements(
@@ -132,35 +134,36 @@ proc draw(
         nil
       )
 
-proc draw*(scene: Scene, shader: GLuint, view, proj: Mat4) =
-  for index in scene.rootNodes:
-    scene.nodes[index].draw(scene, shader, identity(), view, proj)
+proc draw*(model: Model, shader: GLuint, view, proj: Mat4) =
+  let scene = model.scenes[model.scene]
+  for node in scene.nodes:
+    model.nodes[node].draw(model, shader, identity(), view, proj)
 
-proc bindBuffer(scene: Scene, bufferView: BufferView, bufferId: GLuint) =
+proc bindBuffer(model: Model, bufferView: BufferView, bufferId: GLuint) =
   glBindBuffer(bufferView.target, bufferId)
   glBufferData(
     bufferView.target,
     bufferView.byteLength,
-    scene.buffers[bufferView.buffer][bufferView.byteOffset].addr,
+    model.buffers[bufferView.buffer][bufferView.byteOffset].addr,
     GL_STATIC_DRAW
   )
 
-proc uploadToGpu*(scene: Scene) =
-  for i, node in scene.nodes:
+proc uploadToGpu*(model: Model) =
+  for node in model.nodes:
     if node.mesh < 0:
       continue
 
-    for primative in scene.meshes[node.mesh].primatives.mitems:
-      var positionAccessor = scene.accessors[primative.attributes.position].addr
-      let positionBufferView = scene.bufferViews[positionAccessor.bufferView]
+    for primative in model.meshes[node.mesh].primatives.mitems:
+      var positionAccessor = model.accessors[primative.attributes.position].addr
+      let positionBufferView = model.bufferViews[positionAccessor.bufferView]
       glGenBuffers(1, positionAccessor.bufferId.addr)
-      scene.bindBuffer(positionBufferView, positionAccessor.bufferId)
+      model.bindBuffer(positionBufferView, positionAccessor.bufferId)
 
       if primative.indices >= 0:
-        var indicesAccessor = scene.accessors[primative.indices].addr
+        var indicesAccessor = model.accessors[primative.indices].addr
         glGenBuffers(1, indicesAccessor.bufferId.addr)
-        scene.bindBuffer(
-          scene.bufferViews[indicesAccessor.bufferView],
+        model.bindBuffer(
+          model.bufferViews[indicesAccessor.bufferView],
           indicesAccessor.bufferId
         )
 
@@ -180,39 +183,29 @@ proc uploadToGpu*(scene: Scene) =
       )
       glEnableVertexAttribArray(0)
 
-proc clearFromGpu*(scene: Scene) =
+proc clearFromGpu*(model: Model) =
   var bufferIds, vertexArrayIds: seq[GLuint]
 
-  for node in scene.nodes:
+  for accessor in model.accessors.mitems:
+    bufferIds.add(accessor.bufferId)
+    accessor.bufferId = 0
+
+  for node in model.nodes:
     if node.mesh < 0:
       continue
 
-    for primative in scene.meshes[node.mesh].primatives.mitems:
-      bufferIds.add(scene.accessors[primative.attributes.position].bufferId)
-      scene.accessors[primative.attributes.position].bufferId = 0
-
-      if primative.indices > 0:
-        bufferIds.add(scene.accessors[primative.indices].bufferId)
-        scene.accessors[primative.indices].bufferId = 0
-
+    for primative in model.meshes[node.mesh].primatives.mitems:
       vertexArrayIds.add(primative.vertexArrayId)
       primative.vertexArrayId = 0
 
   glDeleteVertexArrays(len(vertexArrayIds).GLint, vertexArrayIds[0].addr)
   glDeleteBuffers(len(bufferIds).GLint, bufferIds[0].addr)
 
-proc loadModel*(file: string): Scene =
+proc loadModel*(file: string): Model =
+  result = Model()
+
   echo &"Loading {file}"
   let jsonRoot = parseJson(readFile(file))
-
-  var scenes: seq[Scene]
-  for entry in jsonRoot["scenes"]:
-    var scene = Scene()
-    for node in entry["nodes"]:
-      scene.rootNodes.add(node.getInt())
-    scenes.add(scene)
-
-  result = scenes[jsonRoot["scene"].getInt()]
 
   for entry in jsonRoot["buffers"]:
     let uri = entry["uri"].getStr()
@@ -405,3 +398,11 @@ proc loadModel*(file: string): Scene =
       node.scale.z = 1
 
     result.nodes.add(node)
+
+  for entry in jsonRoot["scenes"]:
+    var scene = Scene()
+    for node in entry["nodes"]:
+      scene.nodes.add(node.getInt())
+    result.scenes.add(scene)
+
+  result.scene = jsonRoot["scene"].getInt()

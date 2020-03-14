@@ -8,7 +8,7 @@ var
   models: seq[string]
   activeModel: int
   shader: GLuint
-  scene: Scene
+  model: Model
   view, proj: Mat4
 
 for kind, path in walkDir("models"):
@@ -46,11 +46,11 @@ proc onKey(
   elif key == KEY_RIGHT:
     activeModel = min(activeModel + 1, len(models) - 1)
 
-  scene.clearFromGpu()
-  scene = loadModel(joinPath(
+  model.clearFromGpu()
+  model = loadModel(joinPath(
     "models", models[activeModel], "glTF", &"{models[activeModel]}.gltf"
   ))
-  scene.uploadToGpu()
+  model.uploadToGpu()
 
 discard window.setKeyCallback(onKey)
 
@@ -70,10 +70,10 @@ glEnable(GL_MULTISAMPLE)
 glClearColor(1, 0, 0, 1)
 
 # load the first model while starting up
-scene = loadModel(joinPath(
+model = loadModel(joinPath(
   "models", models[activeModel], "glTF", &"{models[activeModel]}.gltf"
 ))
-scene.uploadToGpu()
+model.uploadToGpu()
 
 while windowShouldClose(window) == 0:
   pollEvents()
@@ -89,7 +89,7 @@ while windowShouldClose(window) == 0:
   proj = perspective(45, framebufferWidth / framebufferHeight, 0.1, 100)
 
   # where does shader actually go?
-  scene.draw(shader, view, proj)
+  model.draw(shader, view, proj)
 
   var error: GLenum
   while (error = glGetError(); error != GL_NO_ERROR):
