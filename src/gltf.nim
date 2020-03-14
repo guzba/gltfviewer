@@ -141,54 +141,61 @@ proc uploadToGpu*(model: Model) =
       continue
 
     for primative in model.meshes[node.mesh].primatives.mitems:
-      var positionAccessor = model.accessors[primative.attributes.position].addr
-      let positionBufferView = model.bufferViews[positionAccessor.bufferView]
-      glGenBuffers(1, positionAccessor.bufferId.addr)
-      glBindBuffer(GL_ARRAY_BUFFER, positionAccessor.bufferId)
-      glBufferData(
-        GL_ARRAY_BUFFER,
-        positionBufferView.byteLength,
-        model.buffers[positionBufferView.buffer][positionBufferView.byteOffset].addr,
-        GL_STATIC_DRAW
-      )
+      block:
+        var positionAccessor = model.accessors[primative.attributes.position].addr
+        let positionBufferView = model.bufferViews[positionAccessor.bufferView]
+        let byteOffset = positionAccessor.byteOffset +
+            positionBufferView.byteOffset
+        glGenBuffers(1, positionAccessor.bufferId.addr)
+        glBindBuffer(GL_ARRAY_BUFFER, positionAccessor.bufferId)
+        glBufferData(
+          GL_ARRAY_BUFFER,
+          positionBufferView.byteLength,
+          model.buffers[positionBufferView.buffer][byteOffset].addr,
+          GL_STATIC_DRAW
+        )
+
+        glGenVertexArrays(1, primative.vertexArrayId.addr)
+        glBindVertexArray(primative.vertexArrayId)
+        glBindBuffer(
+          GL_ARRAY_BUFFER,
+          positionAccessor.bufferId
+        )
+        glVertexAttribPointer(
+          0,
+          positionAccessor.kind.componentCount().GLint,
+          positionAccessor.componentType,
+          GL_FALSE,
+          positionBufferView.byteStride.GLint,
+          nil
+        )
+        glEnableVertexAttribArray(0)
 
       if primative.indices >= 0:
         var indicesAccessor = model.accessors[primative.indices].addr
         let indicesBufferView = model.bufferViews[indicesAccessor.bufferView]
+        let byteOffset = indicesAccessor.byteOffset +
+            indicesBufferView.byteOffset
         glGenBuffers(1, indicesAccessor.bufferId.addr)
         glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, indicesAccessor.bufferId)
         glBufferData(
           GL_ELEMENT_ARRAY_BUFFER,
           indicesBufferView.byteLength,
-          model.buffers[indicesBufferView.buffer][indicesBufferView.byteOffset].addr,
+          model.buffers[indicesBufferView.buffer][byteOffset].addr,
           GL_STATIC_DRAW
         )
-
-      glGenVertexArrays(1, primative.vertexArrayId.addr)
-      glBindVertexArray(primative.vertexArrayId)
-      glBindBuffer(
-        GL_ARRAY_BUFFER,
-        positionAccessor.bufferId
-      )
-      glVertexAttribPointer(
-        0,
-        positionAccessor.kind.componentCount().GLint,
-        positionAccessor.componentType,
-        GL_FALSE,
-        positionBufferView.byteStride.GLint,
-        nil
-      )
-      glEnableVertexAttribArray(0)
 
       if primative.attributes.normal >= 0:
         var normalAccessor = model.accessors[primative.attributes.normal].addr
         let normalBufferView = model.bufferViews[normalAccessor.bufferView]
+        let byteOffset = normalAccessor.byteOffset +
+            normalBufferView.byteOffset
         glGenBuffers(1, normalAccessor.bufferId.addr)
         glBindBuffer(GL_ARRAY_BUFFER, normalAccessor.bufferId)
         glBufferData(
           GL_ARRAY_BUFFER,
           normalBufferView.byteLength,
-          model.buffers[normalBufferView.buffer][normalBufferView.byteOffset].addr,
+          model.buffers[normalBufferView.buffer][byteOffset].addr,
           GL_STATIC_DRAW
         )
 
@@ -205,7 +212,6 @@ proc uploadToGpu*(model: Model) =
           nil
         )
         glEnableVertexAttribArray(2)
-
 
 proc clearFromGpu*(model: Model) =
   var bufferIds, vertexArrayIds: seq[GLuint]
@@ -246,14 +252,14 @@ proc loadModel*(file: string): Model =
   for entry in jsonRoot["bufferViews"]:
     var bufferView = BufferView()
     bufferView.buffer = entry["buffer"].getInt()
-    bufferView.byteOffset = entry["byteOffset"].getInt()
+    bufferView.byteOffset = entry{"byteOffset"}.getInt()
     bufferView.byteLength = entry["byteLength"].getInt()
     bufferView.byteStride = entry{"byteStride"}.getInt()
 
     if entry.hasKey("target"):
       let target = entry["target"].getInt()
       if target notin @[GL_ARRAY_BUFFER.int, GL_ELEMENT_ARRAY_BUFFER.int]:
-          raise newException(Exception, &"Invalid bufferView target {target}")
+        raise newException(Exception, &"Invalid bufferView target {target}")
 
     result.bufferViews.add(bufferView)
 
@@ -266,7 +272,7 @@ proc loadModel*(file: string): Model =
   for entry in jsonRoot["accessors"]:
     var accessor = Accessor()
     accessor.bufferView = entry["bufferView"].getInt()
-    accessor.byteOffset = entry["byteOffset"].getInt()
+    accessor.byteOffset = entry{"byteOffset"}.getInt()
     accessor.count = entry["count"].getInt()
 
     let componentType = entry["componentType"].getInt()

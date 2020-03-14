@@ -1,4 +1,4 @@
-import gltf, shaders, opengl, os, staticglfw, strformat, vmath
+import gltf, opengl, os, shaders, staticglfw, strformat, vmath
 
 const
   vertShaderSrc = staticRead("basic.vert")
@@ -85,7 +85,7 @@ while windowShouldClose(window) == 0:
   glClear(GL_COLOR_BUFFER_BIT or GL_DEPTH_BUFFER_BIT)
   glUseProgram(shader)
 
-  view = translate(vec3(0, 0, -10))
+  view = lookAt(vec3(0, 5, 10), vec3(0, 0, 0), vec3(0, 1, 0)) # translate(vec3(0, 0, -10))
   proj = perspective(45, framebufferWidth / framebufferHeight, 0.1, 100)
 
   # where does shader actually go?
