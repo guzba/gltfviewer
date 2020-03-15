@@ -9,8 +9,10 @@ uniform mat4 view;
 uniform mat4 proj;
 
 out vec4 color;
+out vec3 normal;
 
 void main() {
   color = vertexColor;
+  normal = vertexNormal;
   gl_Position = proj * view * model * vec4(vertexPosition, 1.0);
 }

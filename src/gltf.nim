@@ -37,7 +37,7 @@ type
     mesh: int
     applyMatrix: bool
     matrix: Mat4
-    rotation: Vec4
+    rotation: Quat
     translation, scale: Vec3
 
   Scene* = ref object
@@ -90,9 +90,12 @@ proc draw(
 ) =
   var trs: Mat4
   if node.applyMatrix:
-    trs = node.matrix * transform
+    trs = transform * node.matrix
   else:
-    trs = translate(node.translation) * scale(node.scale) * transform
+    trs = transform *
+        translate(node.translation) *
+        node.rotation.mat4() *
+        scale(node.scale)
 
   for kid in node.kids:
     model.nodes[kid].draw(model, shader, trs, view, proj)

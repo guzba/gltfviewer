@@ -85,8 +85,8 @@ while windowShouldClose(window) == 0:
   glClear(GL_COLOR_BUFFER_BIT or GL_DEPTH_BUFFER_BIT)
   glUseProgram(shader)
 
-  view = lookAt(vec3(0, 5, 10), vec3(0, 0, 0), vec3(0, 1, 0)) # translate(vec3(0, 0, -10))
-  proj = perspective(45, framebufferWidth / framebufferHeight, 0.1, 100)
+  view = lookAt(vec3(0, 5, 1000), vec3(0, 0, 0), vec3(0, 1, 0)) # translate(vec3(0, 0, -10))
+  proj = perspective(45, framebufferWidth / framebufferHeight, 0.1, 10000)
 
   # where does shader actually go?
   model.draw(shader, view, proj)
