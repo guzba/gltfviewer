@@ -13,6 +13,11 @@ out vec3 normal;
 
 void main() {
   color = vertexColor;
-  normal = vertexNormal;
+
+  mat4 modelRotation = model;
+  modelRotation[3].xyz = vec3(0, 0, 0); // remove translation
+  // there may still be scale
+  normal = (modelRotation * vec4(vertexNormal, 1.0)).xyz;
+
   gl_Position = proj * view * model * vec4(vertexPosition, 1.0);
 }
