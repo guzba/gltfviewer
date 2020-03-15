@@ -67,7 +67,7 @@ glDepthMask(GL_TRUE)
 glEnable(GL_DEPTH_TEST)
 glEnable(GL_MULTISAMPLE)
 
-glClearColor(0, 0, 0, 1)
+glClearColor(1, 1, 1, 1)
 
 # load the first model while starting up
 model = loadModel(joinPath(
