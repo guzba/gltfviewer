@@ -19,13 +19,12 @@ type
     bufferId: GLuint
 
   PrimativeAttributes = object
-    position, normal: int
+    position, normal, color0: int
 
   Primative = object
     attributes: PrimativeAttributes
     indices, material: int
     mode: GLenum
-    number: Natural
     vertexArrayId: GLuint
 
   Mesh = object
@@ -135,6 +134,40 @@ proc draw*(model: Model, shader: GLuint, view, proj: Mat4) =
   for node in scene.nodes:
     model.nodes[node].draw(model, shader, identity(), view, proj)
 
+proc bindBuffer(
+  model: Model,
+  accessorIndex: Natural,
+  target: GLenum,
+  vertexAttribIndex: int
+) =
+  let
+    accessor = model.accessors[accessorIndex].addr
+    bufferView = model.bufferViews[accessor.bufferView]
+    byteOffset = accessor.byteOffset + bufferView.byteOffset
+    byteLength = accessor.count *
+        accessor.kind.componentCount() *
+        accessor.componentType.size()
+
+  glGenBuffers(1, accessor.bufferId.addr)
+  glBindBuffer(GL_ARRAY_BUFFER, accessor.bufferId)
+  glBufferData(
+    GL_ARRAY_BUFFER,
+    byteLength,
+    model.buffers[bufferView.buffer][byteOffset].addr,
+    GL_STATIC_DRAW
+  )
+
+  if vertexAttribIndex >= 0:
+    glVertexAttribPointer(
+      vertexAttribIndex.GLuint,
+      accessor.kind.componentCount().GLint,
+      accessor.componentType,
+      GL_FALSE,
+      bufferView.byteStride.GLint,
+      nil
+    )
+    glEnableVertexAttribArray(vertexAttribIndex.GLuint)
+
 proc uploadToGpu*(model: Model) =
   for node in model.nodes:
     if node.mesh < 0:
@@ -142,76 +175,17 @@ proc uploadToGpu*(model: Model) =
 
     for primative in model.meshes[node.mesh].primatives.mitems:
       block:
-        var positionAccessor = model.accessors[primative.attributes.position].addr
-        let positionBufferView = model.bufferViews[positionAccessor.bufferView]
-        let byteOffset = positionAccessor.byteOffset +
-            positionBufferView.byteOffset
-        glGenBuffers(1, positionAccessor.bufferId.addr)
-        glBindBuffer(GL_ARRAY_BUFFER, positionAccessor.bufferId)
-        glBufferData(
-          GL_ARRAY_BUFFER,
-          positionBufferView.byteLength,
-          model.buffers[positionBufferView.buffer][byteOffset].addr,
-          GL_STATIC_DRAW
-        )
-
         glGenVertexArrays(1, primative.vertexArrayId.addr)
         glBindVertexArray(primative.vertexArrayId)
-        glBindBuffer(
-          GL_ARRAY_BUFFER,
-          positionAccessor.bufferId
-        )
-        glVertexAttribPointer(
-          0,
-          positionAccessor.kind.componentCount().GLint,
-          positionAccessor.componentType,
-          GL_FALSE,
-          positionBufferView.byteStride.GLint,
-          nil
-        )
-        glEnableVertexAttribArray(0)
+
+        model.bindBuffer(primative.attributes.position, GL_ARRAY_BUFFER, 0)
 
       if primative.indices >= 0:
-        var indicesAccessor = model.accessors[primative.indices].addr
-        let indicesBufferView = model.bufferViews[indicesAccessor.bufferView]
-        let byteOffset = indicesAccessor.byteOffset +
-            indicesBufferView.byteOffset
-        glGenBuffers(1, indicesAccessor.bufferId.addr)
-        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, indicesAccessor.bufferId)
-        glBufferData(
-          GL_ELEMENT_ARRAY_BUFFER,
-          indicesBufferView.byteLength,
-          model.buffers[indicesBufferView.buffer][byteOffset].addr,
-          GL_STATIC_DRAW
-        )
-
+        model.bindBuffer(primative.indices, GL_ELEMENT_ARRAY_BUFFER, -1)
+      if primative.attributes.color0 >= 0:
+        model.bindBuffer(primative.attributes.color0, GL_ARRAY_BUFFER, 1)
       if primative.attributes.normal >= 0:
-        var normalAccessor = model.accessors[primative.attributes.normal].addr
-        let normalBufferView = model.bufferViews[normalAccessor.bufferView]
-        let byteOffset = normalAccessor.byteOffset +
-            normalBufferView.byteOffset
-        glGenBuffers(1, normalAccessor.bufferId.addr)
-        glBindBuffer(GL_ARRAY_BUFFER, normalAccessor.bufferId)
-        glBufferData(
-          GL_ARRAY_BUFFER,
-          normalBufferView.byteLength,
-          model.buffers[normalBufferView.buffer][byteOffset].addr,
-          GL_STATIC_DRAW
-        )
-
-        glBindBuffer(
-          GL_ARRAY_BUFFER,
-          normalAccessor.bufferId
-        )
-        glVertexAttribPointer(
-          2,
-          normalAccessor.kind.componentCount().GLint,
-          normalAccessor.componentType,
-          GL_FALSE,
-          normalBufferView.byteStride.GLint,
-          nil
-        )
-        glEnableVertexAttribArray(2)
+        model.bindBuffer(primative.attributes.normal, GL_ARRAY_BUFFER, 2)
 
 proc clearFromGpu*(model: Model) =
   var bufferIds, vertexArrayIds: seq[GLuint]
@@ -319,7 +293,6 @@ proc loadModel*(file: string): Model =
 
     result.accessors.add(accessor)
 
-  var primativeCount = 0
   for entry in jsonRoot["meshes"]:
     var mesh = Mesh()
     mesh.name = entry{"name"}.getStr()
@@ -328,8 +301,6 @@ proc loadModel*(file: string): Model =
       var
         primative = Primative()
         attributes = entry["attributes"]
-
-      primative.number = primativeCount
 
       if attributes.hasKey("POSITION"):
         primative.attributes.position = attributes["POSITION"].getInt()
@@ -340,6 +311,11 @@ proc loadModel*(file: string): Model =
         primative.attributes.normal = attributes["NORMAL"].getInt()
       else:
         primative.attributes.normal = -1
+
+      if attributes.hasKey("COLOR_0"):
+        primative.attributes.color0 = attributes["COLOR_0"].getInt()
+      else:
+        primative.attributes.color0 = -1
 
       if entry.hasKey("indices"):
         primative.indices = entry["indices"].getInt()
@@ -369,7 +345,6 @@ proc loadModel*(file: string): Model =
         primative.mode = GL_TRIANGLES
 
       mesh.primatives.add(primative)
-      inc(primativeCount)
 
     result.meshes.add(mesh)
 
