@@ -481,19 +481,7 @@ proc loadModel*(file: string): Model =
         primative.material = -1
 
       if entry.hasKey("mode"):
-        let mode = entry["mode"].getInt()
-        case mode:
-          of 0:
-            primative.mode = GL_POINTS
-          of 1:
-            primative.mode = GL_LINES
-          of 4:
-            primative.mode = GL_TRIANGLES
-          else:
-            raise newException(
-              Exception,
-              &"Invalid primative mode {mode}"
-            )
+        primative.mode = entry["mode"].getInt().GLenum
       else:
         primative.mode = GL_TRIANGLES
 
