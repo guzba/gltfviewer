@@ -28,6 +28,28 @@ type
     name: string
     pbrMetallicRoughness: PBRMetallicRoughness
 
+  InterpolationKind = enum
+    iLinear, iStep, iCubicSpline
+
+  AnimationSampler = object
+    input, output: Natural
+    interpolation: InterpolationKind
+
+  AnimationPath = enum
+    pTranslation, pRotation, pScale, pWeights
+
+  AnimationTarget = object
+    node: Natural
+    path: AnimationPath
+
+  AnimationChannel = object
+    sampler: Natural
+    target: AnimationTarget
+
+  Animation = object
+    samplers: seq[Natural]
+    channels: seq[AnimationChannel]
+
   AccessorKind = enum
     atSCALAR, atVEC2, atVEC3, atVEC4, atMAT2, atMAT3, atMAT4
 
@@ -70,6 +92,7 @@ type
     textures: seq[Texture]
     samplers: seq[Sampler]
     images: seq[Image]
+    animations: seq[Animation]
     materials: seq[Material]
     accessors: seq[Accessor]
     meshes: seq[Mesh]
@@ -391,6 +414,54 @@ proc loadModel*(file: string): Model =
 
       result.materials.add(material)
 
+  if jsonRoot.hasKey("animations"):
+    for entry in jsonRoot["animations"]:
+      var animation = Animation()
+
+      for entry in entry["samplers"]:
+        var animationSampler = AnimationSampler()
+        animationSampler.input = entry["input"].getInt()
+        animationSampler.output = entry["output"].getInt()
+
+        let interpolation = entry["interpolation"].getStr()
+        case interpolation:
+          of "LINEAR":
+            animationSampler.interpolation = iLinear
+          of "STEP":
+            animationSampler.interpolation = iStep
+          of "CUBICSPLINE":
+            animationSampler.interpolation = iCubicSpline
+          else:
+            raise newException(
+              Exception,
+              &"Unsupported animation sampler interpolation {interpolation}"
+            )
+
+      for entry in entry["channels"]:
+        var animationChannel = AnimationChannel()
+        animationChannel.sampler = entry["sampler"].getInt()
+        animationChannel.target.node = entry["target"]["node"].getInt()
+
+        let path = entry["target"]["path"].getStr()
+        case path:
+          of "translation":
+            animationChannel.target.path = pTranslation
+          of "rotation":
+            animationChannel.target.path = pRotation
+          of "scale":
+            animationChannel.target.path = pScale
+          of "weights":
+            animationChannel.target.path = pWeights
+          else:
+            raise newException(
+              Exception,
+              &"Unsupported animation channel path {path}"
+            )
+
+        animation.channels.add(animationChannel)
+
+      result.animations.add(animation)
+
   for entry in jsonRoot["accessors"]:
     var accessor = Accessor()
     accessor.bufferView = entry["bufferView"].getInt()
@@ -517,7 +588,6 @@ proc loadModel*(file: string): Model =
       node.rotation.y = values[1].getFloat()
       node.rotation.z = values[2].getFloat()
       node.rotation.w = values[3].getFloat()
-      echo "rotation will not be applied"
     else:
       node.rotation.w = 1
 
