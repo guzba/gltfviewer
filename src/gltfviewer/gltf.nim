@@ -1,12 +1,32 @@
-import json, opengl, os, strformat, strutils, vmath
+import json, nimPNG, opengl, os, strformat, strutils, vmath
 
 type
   BufferView = object
     buffer: int
     byteOffset, byteLength, byteStride: Natural
 
+  Image = object
+    width, height: int
+    data: string
+
+  Texture = object
+    source: Natural
+    sampler: int
+
+  Sampler = object
+    magFilter, minFilter, wrapS, wrapT: GLint
+
+  BaseColorTexture = object
+    index: int
+    textureId: GLuint
+
+  PBRMetallicRoughness = object
+    apply: bool
+    baseColorTexture: BaseColorTexture
+
   Material = object
     name: string
+    pbrMetallicRoughness: PBRMetallicRoughness
 
   AccessorKind = enum
     atSCALAR, atVEC2, atVEC3, atVEC4, atMAT2, atMAT3, atMAT4
@@ -19,7 +39,7 @@ type
     bufferId: GLuint
 
   PrimativeAttributes = object
-    position, normal, color0: int
+    position, normal, color0, texcoord0: int
 
   Primative = object
     attributes: PrimativeAttributes
@@ -47,6 +67,9 @@ type
     # All of the data that is indexed into
     buffers: seq[string]
     bufferViews: seq[BufferView]
+    textures: seq[Texture]
+    samplers: seq[Sampler]
+    images: seq[Image]
     materials: seq[Material]
     accessors: seq[Accessor]
     meshes: seq[Mesh]
@@ -116,11 +139,23 @@ proc draw(
   glUniformMatrix4fv(projUniform, 1, GL_FALSE, projArray[0].addr)
 
   for primative in model.meshes[node.mesh].primatives:
-    let positionAccessor = model.accessors[primative.attributes.position]
-
     glBindVertexArray(primative.vertexArrayId)
 
+    var textureId: GLuint
+    if primative.material >= 0:
+      let material = model.materials[primative.material]
+      if material.pbrMetallicRoughness.apply:
+        if material.pbrMetallicRoughness.baseColorTexture.index >= 0:
+          textureId = material.pbrMetallicRoughness.baseColorTexture.textureId
+
+    # Bind the material texture (or 0 to ensure no previous texture is bound)
+    glBindTexture(GL_TEXTURE_2D, textureId)
+
+    var sampleTexUniform = glGetUniformLocation(shader, "sampleTex")
+    glUniform1i(sampleTexUniform, textureId.GLint)
+
     if primative.indices < 0:
+      let positionAccessor = model.accessors[primative.attributes.position]
       glDrawArrays(primative.mode, 0, positionAccessor.count.cint)
     else:
       let indicesAccessor = model.accessors[primative.indices]
@@ -171,17 +206,44 @@ proc bindBuffer(
     )
     glEnableVertexAttribArray(vertexAttribIndex.GLuint)
 
+proc bindTexture(model: Model, materialIndex: Natural) =
+  let material = model.materials[materialIndex].addr
+  let baseColorTexture = material.pbrMetallicRoughness.baseColorTexture.addr
+  let image = model.images[baseColorTexture.index].addr
+  let sampler = model.samplers[baseColorTexture.index]
+
+  glGenTextures(1, baseColorTexture.textureId.addr)
+  glBindTexture(GL_TEXTURE_2D, baseColorTexture.textureId)
+
+  glTexImage2D(
+    GL_TEXTURE_2D,
+    0,
+    GL_RGB.GLint,
+    image.width.GLint,
+    image.height.GLint,
+    0,
+    GL_RGB,
+    GL_UNSIGNED_BYTE,
+    image.data[0].addr
+  )
+
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, sampler.magFilter)
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, sampler.minFilter)
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, sampler.wrapS)
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, sampler.wrapT)
+
+  glGenerateMipmap(GL_TEXTURE_2D)
+
 proc uploadToGpu*(model: Model) =
   for node in model.nodes:
     if node.mesh < 0:
       continue
 
     for primative in model.meshes[node.mesh].primatives.mitems:
-      block:
-        glGenVertexArrays(1, primative.vertexArrayId.addr)
-        glBindVertexArray(primative.vertexArrayId)
+      glGenVertexArrays(1, primative.vertexArrayId.addr)
+      glBindVertexArray(primative.vertexArrayId)
 
-        model.bindBuffer(primative.attributes.position, GL_ARRAY_BUFFER, 0)
+      model.bindBuffer(primative.attributes.position, GL_ARRAY_BUFFER, 0)
 
       if primative.indices >= 0:
         model.bindBuffer(primative.indices, GL_ELEMENT_ARRAY_BUFFER, -1)
@@ -189,9 +251,17 @@ proc uploadToGpu*(model: Model) =
         model.bindBuffer(primative.attributes.color0, GL_ARRAY_BUFFER, 1)
       if primative.attributes.normal >= 0:
         model.bindBuffer(primative.attributes.normal, GL_ARRAY_BUFFER, 2)
+      if primative.attributes.texcoord0 >= 0:
+        model.bindBuffer(primative.attributes.texcoord0, GL_ARRAY_BUFFER, 3)
+
+      if primative.material >= 0:
+        let material = model.materials[primative.material]
+        if material.pbrMetallicRoughness.apply:
+          if material.pbrMetallicRoughness.baseColorTexture.index >= 0:
+            model.bindTexture(primative.material)
 
 proc clearFromGpu*(model: Model) =
-  var bufferIds, vertexArrayIds: seq[GLuint]
+  var bufferIds, textureIds, vertexArrayIds: seq[GLuint]
 
   for accessor in model.accessors.mitems:
     bufferIds.add(accessor.bufferId)
@@ -205,14 +275,27 @@ proc clearFromGpu*(model: Model) =
       vertexArrayIds.add(primative.vertexArrayId)
       primative.vertexArrayId = 0
 
+      if primative.material < 0:
+        return
+
+      let material = model.materials[primative.material]
+      if material.pbrMetallicRoughness.apply:
+        let baseColorTexture = material.pbrMetallicRoughness.baseColorTexture
+        if baseColorTexture.index >= 0:
+          textureIds.add(baseColorTexture.textureId)
+
   glDeleteVertexArrays(len(vertexArrayIds).GLint, vertexArrayIds[0].addr)
   glDeleteBuffers(len(bufferIds).GLint, bufferIds[0].addr)
+
+  if len(textureIds) > 0:
+    glDeleteTextures(len(textureIds).GLint, textureIds[0].addr)
 
 proc loadModel*(file: string): Model =
   result = Model()
 
   echo &"Loading {file}"
   let jsonRoot = parseJson(readFile(file))
+  let modelDir = splitPath(file)[0]
 
   for entry in jsonRoot["buffers"]:
     let uri = entry["uri"].getStr()
@@ -221,7 +304,7 @@ proc loadModel*(file: string): Model =
     if uri.startsWith("data:"):
       discard
     else:
-      data = readFile(joinPath(splitPath(file)[0], uri))
+      data = readFile(joinPath(modelDir, uri))
 
     assert len(data) == entry["byteLength"].getInt()
     result.buffers.add(data)
@@ -240,10 +323,72 @@ proc loadModel*(file: string): Model =
 
     result.bufferViews.add(bufferView)
 
+  if jsonRoot.hasKey("textures"):
+    for entry in jsonRoot["textures"]:
+      var texture = Texture()
+      texture.source = entry["source"].getInt()
+      texture.sampler = entry["sampler"].getInt()
+      result.textures.add(texture)
+
+  if jsonRoot.hasKey("images"):
+    for entry in jsonRoot["images"]:
+      var image = Image()
+
+      if entry.hasKey("uri"):
+        let uri = entry["uri"].getStr()
+        if uri.endsWith(".png"):
+          let png = loadPNG24(joinPath(modelDir, uri))
+          image.width = png.width
+          image.height = png.height
+          image.data = png.data
+        else:
+          raise newException(Exception, &"Unsupported file extension {uri}")
+      else:
+        raise newException(Exception, "Unsupported image type")
+
+      result.images.add(image)
+
+  if jsonRoot.hasKey("samplers"):
+    for entry in jsonRoot["samplers"]:
+      var sampler = Sampler()
+
+      if entry.hasKey("magFilter"):
+        sampler.magFilter = entry["magFilter"].getInt().GLint
+      else:
+        sampler.magFilter = GL_LINEAR
+
+      if entry.hasKey("minFilter"):
+        sampler.minFilter = entry["minFilter"].getInt().GLint
+      else:
+        sampler.minFilter = GL_LINEAR_MIPMAP_LINEAR
+
+      if entry.hasKey("wrapS"):
+        sampler.wrapS = entry["wrapS"].getInt().GLint
+      else:
+        sampler.wrapS = GL_REPEAT
+
+      if entry.hasKey("wrapT"):
+        sampler.wrapT = entry["wrapT"].getInt().GLint
+      else:
+        sampler.wrapT = GL_REPEAT
+
+      result.samplers.add(sampler)
+
   if jsonRoot.hasKey("materials"):
     for entry in jsonRoot["materials"]:
       var material = Material()
       material.name = entry{"name"}.getStr()
+
+      if entry.hasKey("pbrMetallicRoughness"):
+        let pbrMetallicRoughness = entry["pbrMetallicRoughness"]
+        material.pbrMetallicRoughness.apply = true
+        if pbrMetallicRoughness.hasKey("baseColorTexture"):
+          let baseColorTexture = pbrMetallicRoughness["baseColorTexture"]
+          material.pbrMetallicRoughness.baseColorTexture.index =
+              baseColorTexture["index"].getInt()
+        else:
+          material.pbrMetallicRoughness.baseColorTexture.index = -1
+
       result.materials.add(material)
 
   for entry in jsonRoot["accessors"]:
@@ -319,6 +464,11 @@ proc loadModel*(file: string): Model =
         primative.attributes.color0 = attributes["COLOR_0"].getInt()
       else:
         primative.attributes.color0 = -1
+
+      if attributes.hasKey("TEXCOORD_0"):
+        primative.attributes.texcoord0 = attributes["TEXCOORD_0"].getInt()
+      else:
+        primative.attributes.texcoord0 = -1
 
       if entry.hasKey("indices"):
         primative.indices = entry["indices"].getInt()

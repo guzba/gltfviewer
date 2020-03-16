@@ -1,8 +1,8 @@
-import gltf, opengl, os, shaders, staticglfw, strformat, vmath
+import gltfviewer/[gltf, shaders], opengl, os, staticglfw, strformat, vmath
 
 const
-  vertShaderSrc = staticRead("basic.vert")
-  fragShaderSrc = staticRead("basic.frag")
+  vertShaderSrc = staticRead("gltfviewer/basic.vert")
+  fragShaderSrc = staticRead("gltfviewer/basic.frag")
 
 var
   models: seq[string]
@@ -13,7 +13,7 @@ var
   mouseClicked: bool
   buttonDown = newSeq[bool](348)
   cameraHpr = vec3(0, PI/2, 0)
-  cameraPos = vec3(0, 0, 400)
+  cameraPos = vec3(0, 0, 5)
   view, proj: Mat4
 
 for kind, path in walkDir("models"):
@@ -117,7 +117,7 @@ while windowShouldClose(window) == 0:
     mousePosPrev = mousePos
 
   let fov = (
-    rotateX(cameraHpr.y) * rotateZ(cameraHpr.x) * translate(vec3(1, 0, 0))
+    rotateX(cameraHpr.y) * rotateZ(cameraHpr.x)
   ).inverse()
 
   const moveSpeed = -0.25
