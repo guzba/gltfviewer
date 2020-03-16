@@ -32,7 +32,7 @@ type
     iLinear, iStep, iCubicSpline
 
   AnimationSampler = object
-    input, output: Natural
+    input, output: Natural # Accessor indices
     interpolation: InterpolationKind
 
   AnimationPath = enum
@@ -46,9 +46,13 @@ type
     sampler: Natural
     target: AnimationTarget
 
+  Interpolator = object
+    prevTime: float
+
   Animation = object
-    samplers: seq[Natural]
+    samplers: seq[AnimationSampler]
     channels: seq[AnimationChannel]
+    interpolators: seq[Interpolator]
 
   AccessorKind = enum
     atSCALAR, atVEC2, atVEC3, atVEC4, atMAT2, atMAT3, atMAT4
@@ -128,6 +132,30 @@ func componentCount(accessorKind: AccessorKind): Natural =
     of atMAT4:
       16
 
+proc interpolate*(interpolator: Interpolator) =
+  discard
+
+proc advanceAnimations*(model: Model, elapsedTime: float) =
+  for i in 0..<len(model.animations):
+    var animation = model.animations[i].addr
+    for j in 0..<len(animation.channels):
+      let
+        channel = animation.channels[j]
+        sampler = animation.samplers[channel.sampler]
+        input = model.accessors[sampler.input].addr
+        output = model.accessors[sampler.output].addr
+        interpolator = animation.interpolators[j].addr
+
+      case channel.target.path:
+        of pTranslation:
+          discard
+        of pRotation:
+          discard
+        of pScale:
+          discard
+        of pWeights:
+          discard
+
 proc draw(
   node: Node,
   model: Model,
@@ -146,19 +174,20 @@ proc draw(
   for kid in node.kids:
     model.nodes[kid].draw(model, shader, trs, view, proj)
 
+  # This node just applies a transform to children
   if node.mesh < 0:
     return
 
-  var modelUniform = glGetUniformLocation(shader, "model")
-  var modelArray = trs.toFloat32()
+  var
+    modelUniform = glGetUniformLocation(shader, "model")
+    viewUniform = glGetUniformLocation(shader, "view")
+    projUniform = glGetUniformLocation(shader, "proj")
+    modelArray = trs.toFloat32()
+    viewArray = view.toFloat32()
+    projArray = proj.toFloat32()
+
   glUniformMatrix4fv(modelUniform, 1, GL_FALSE, modelArray[0].addr)
-
-  var viewUniform = glGetUniformLocation(shader, "view")
-  var viewArray = view.toFloat32()
   glUniformMatrix4fv(viewUniform, 1, GL_FALSE, viewArray[0].addr)
-
-  var projUniform = glGetUniformLocation(shader, "proj")
-  var projArray = proj.toFloat32()
   glUniformMatrix4fv(projUniform, 1, GL_FALSE, projArray[0].addr)
 
   for primative in model.meshes[node.mesh].primatives:
@@ -230,10 +259,11 @@ proc bindBuffer(
     glEnableVertexAttribArray(vertexAttribIndex.GLuint)
 
 proc bindTexture(model: Model, materialIndex: Natural) =
-  let material = model.materials[materialIndex].addr
-  let baseColorTexture = material.pbrMetallicRoughness.baseColorTexture.addr
-  let image = model.images[baseColorTexture.index].addr
-  let sampler = model.samplers[baseColorTexture.index]
+  let
+    material = model.materials[materialIndex].addr
+    baseColorTexture = material.pbrMetallicRoughness.baseColorTexture.addr
+    image = model.images[baseColorTexture.index].addr
+    sampler = model.samplers[baseColorTexture.index]
 
   glGenTextures(1, baseColorTexture.textureId.addr)
   glBindTexture(GL_TEXTURE_2D, baseColorTexture.textureId)
@@ -317,8 +347,9 @@ proc loadModel*(file: string): Model =
   result = Model()
 
   echo &"Loading {file}"
-  let jsonRoot = parseJson(readFile(file))
-  let modelDir = splitPath(file)[0]
+  let
+    jsonRoot = parseJson(readFile(file))
+    modelDir = splitPath(file)[0]
 
   for entry in jsonRoot["buffers"]:
     let uri = entry["uri"].getStr()
@@ -408,7 +439,7 @@ proc loadModel*(file: string): Model =
         if pbrMetallicRoughness.hasKey("baseColorTexture"):
           let baseColorTexture = pbrMetallicRoughness["baseColorTexture"]
           material.pbrMetallicRoughness.baseColorTexture.index =
-              baseColorTexture["index"].getInt()
+            baseColorTexture["index"].getInt()
         else:
           material.pbrMetallicRoughness.baseColorTexture.index = -1
 
@@ -437,6 +468,8 @@ proc loadModel*(file: string): Model =
               &"Unsupported animation sampler interpolation {interpolation}"
             )
 
+        animation.samplers.add(animationSampler)
+
       for entry in entry["channels"]:
         var animationChannel = AnimationChannel()
         animationChannel.sampler = entry["sampler"].getInt()
@@ -459,6 +492,7 @@ proc loadModel*(file: string): Model =
             )
 
         animation.channels.add(animationChannel)
+        animation.interpolators.add(Interpolator())
 
       result.animations.add(animation)
 

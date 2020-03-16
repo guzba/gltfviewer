@@ -1,4 +1,5 @@
-import gltfviewer/[gltf, shaders], opengl, os, staticglfw, strformat, vmath
+import gltfviewer/gltf, gltfviewer/shaders, opengl, os, staticglfw, strformat,
+    times, vmath
 
 const
   vertShaderSrc = staticRead("gltfviewer/basic.vert")
@@ -15,6 +16,7 @@ var
   cameraHpr = vec3(0, PI/2, 0)
   cameraPos = vec3(0, 0, 5)
   view, proj: Mat4
+  startTime: float
 
 for kind, path in walkDir("models"):
   if kind == pcDir:
@@ -99,6 +101,8 @@ model = loadModel(joinPath(
 ))
 model.uploadToGpu()
 
+startTime = epochTime()
+
 while windowShouldClose(window) == 0:
   pollEvents()
 
@@ -140,6 +144,7 @@ while windowShouldClose(window) == 0:
   view = rotateX(cameraHpr.y) * rotateZ(cameraHpr.x) * translate(-cameraPos)
   proj = perspective(45, framebufferWidth / framebufferHeight, 0.1, 1000)
 
+  model.advanceAnimations(epochTime() - startTime)
   model.draw(shader, view, proj)
 
   var error: GLenum
