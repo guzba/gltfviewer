@@ -6,7 +6,7 @@ srcDir        = "src"
 
 requires "nim >= 1.0.0"
 requires "chroma >= 0.0.1"
-requires "vmath >= 0.3.0"
+requires "glm >= 1.1.1"
 requires "opengl >= 1.2.3"
 requires "staticglfw >= 4.0.1"
 requires "nimPNG >= 0.2.5"

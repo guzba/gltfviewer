@@ -1,5 +1,5 @@
 import gltfviewer/gltf, gltfviewer/shaders, opengl, os, staticglfw, strformat,
-    times, vmath
+    times, glm
 
 const
   vertShaderSrc = staticRead("gltfviewer/basic.vert")
@@ -10,12 +10,12 @@ var
   activeModel: int
   shader: GLuint
   model: Model
-  mousePos, mousePosPrev, mouseDelta: Vec2
+  mousePos, mousePosPrev, mouseDelta: Vec2[float64]
   mouseClicked: bool
   buttonDown = newSeq[bool](348)
-  cameraHpr = vec3(0, PI/2, 0)
-  cameraPos = vec3(0, 0, 5)
-  view, proj: Mat4
+  cameraHpr = vec3f(0, PI/2, 0)
+  cameraPos = vec3f(0, 0, 5)
+  view, proj: Mat[4, 4, float32]
   startTime: float
 
 for kind, path in walkDir("models"):
@@ -108,6 +108,7 @@ while windowShouldClose(window) == 0:
 
   var framebufferWidth, framebufferHeight: cint
   getFramebufferSize(window, framebufferWidth.addr, framebufferHeight.addr)
+  let aspectRatio = framebufferWidth / framebufferHeight
 
   glViewport(0, 0, framebufferWidth, framebufferHeight)
   glClear(GL_COLOR_BUFFER_BIT or GL_DEPTH_BUFFER_BIT)
@@ -116,33 +117,35 @@ while windowShouldClose(window) == 0:
   block:
     var x, y: float64
     window.getCursorPos(addr x, addr y)
-    mousePos = vec2(x, y)
+    mousePos = vec2d(x, y)
     mouseDelta = mousePos - mousePosPrev
     mousePosPrev = mousePos
 
-  let fov = (
-    rotateX(cameraHpr.y) * rotateZ(cameraHpr.x)
-  ).inverse()
+    rotateX(cameraHpr.y)
 
-  const moveSpeed = -0.25
-  if buttonDown[KEY_W]:
-    cameraPos = cameraPos + fov.fov * moveSpeed
-  if buttonDown[KEY_S]:
-    cameraPos = cameraPos - fov.fov * moveSpeed
-  if buttonDown[KEY_D]:
-    cameraPos = cameraPos - fov.right * moveSpeed
-  if buttonDown[KEY_A]:
-    cameraPos = cameraPos + fov.right * moveSpeed
-  if buttonDown[KEY_E]:
-    cameraPos = cameraPos - fov.up * moveSpeed
-  if buttonDown[KEY_Q]:
-    cameraPos = cameraPos + fov.up * moveSpeed
+  # let fov = (
+  #   rotateX(cameraHpr.y) * rotateZ(cameraHpr.x)
+  # ).inverse()
 
-  cameraHpr.x -= mouseDelta.x / 300
-  cameraHpr.y -= mouseDelta.y / 300
+  # const moveSpeed = -0.25
+  # if buttonDown[KEY_W]:
+  #   cameraPos = cameraPos + fov.fov * moveSpeed
+  # if buttonDown[KEY_S]:
+  #   cameraPos = cameraPos - fov.fov * moveSpeed
+  # if buttonDown[KEY_D]:
+  #   cameraPos = cameraPos - fov.right * moveSpeed
+  # if buttonDown[KEY_A]:
+  #   cameraPos = cameraPos + fov.right * moveSpeed
+  # if buttonDown[KEY_E]:
+  #   cameraPos = cameraPos - fov.up * moveSpeed
+  # if buttonDown[KEY_Q]:
+  #   cameraPos = cameraPos + fov.up * moveSpeed
 
-  view = rotateX(cameraHpr.y) * rotateZ(cameraHpr.x) * translate(-cameraPos)
-  proj = perspective(45, framebufferWidth / framebufferHeight, 0.1, 1000)
+  # cameraHpr.x -= mouseDelta.x / 300
+  # cameraHpr.y -= mouseDelta.y / 300
+
+  view = mat4f().translate(0, 0, -10) # rotateX(cameraHpr.y) * rotateZ(cameraHpr.x) * translate(-cameraPos)
+  proj = perspective[float32](radians(45.0), aspectRatio, 0.1, 1000)
 
   model.advanceAnimations(epochTime() - startTime)
   model.draw(shader, view, proj)
