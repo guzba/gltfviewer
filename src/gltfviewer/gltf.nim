@@ -1,4 +1,4 @@
-import json, nimPNG, opengl, os, strformat, strutils, glm, math
+import json, nimPNG, opengl, os, strformat, strutils, vmath
 
 type
   BufferView = object
@@ -80,9 +80,9 @@ type
     kids: seq[Natural]
     mesh: int
     applyMatrix: bool
-    matrix: Mat[4, 4, float32]
-    rotation: Quat[float32]
-    translation, scale: Vec3[float32]
+    matrix: Mat4
+    rotation: Quat
+    translation, scale: Vec3
 
   Scene* = ref object
     nodes: seq[Natural]
@@ -134,14 +134,14 @@ template read[T](buffer: ptr string, byteOffset: int, index = 0): auto =
   cast[ptr T](buffer[byteOffset + (index * sizeof(T))].addr)[]
 
 template readVec3(buffer: ptr string, byteOffset, index: int): Vec3 =
-  var v: Vec3[float32]
+  var v: Vec3
   v.x = read[float32](buffer, byteOffset, index)
   v.y = read[float32](buffer, byteOffset, index + 1)
   v.z = read[float32](buffer, byteOffset, index + 2)
   v
 
 template readQuat(buffer: ptr string, byteOffset, index: int): Quat =
-  var q: Quat[float32]
+  var q: Quat
   q.x = read[float32](buffer, byteOffset, index)
   q.y = read[float32](buffer, byteOffset, index + 1)
   q.z = read[float32](buffer, byteOffset, index + 2)
@@ -234,7 +234,7 @@ proc advanceAnimations*(model: Model, totalTime: float) =
                   outputByteOffset,
                   nextKey * output.kind.componentCount
                 )
-                transform = mix(v0, v1, normalizedTime)
+                transform = lerp(v0, v1, normalizedTime)
 
               if channel.target.path == pTranslation:
                 model.nodes[channel.target.node].translation = transform
@@ -253,7 +253,7 @@ proc advanceAnimations*(model: Model, totalTime: float) =
                   nextKey * output.kind.componentCount
                 )
               model.nodes[channel.target.node].rotation =
-                slerp(q0, q1, normalizedTime)
+                nlerp(q0, q1, normalizedTime)
             of pWeights:
               discard
         of iCubicSpline:
@@ -298,14 +298,13 @@ proc advanceAnimations*(model: Model, totalTime: float) =
 
           case channel.target.path:
             of pTranslation, pScale:
-              let transform = cubicSpline[Vec3[float32]]()
+              let transform = cubicSpline[Vec3]()
               if channel.target.path == pTranslation:
                 model.nodes[channel.target.node].translation = transform
               else:
                 model.nodes[channel.target.node].scale = transform
             of pRotation:
-              model.nodes[channel.target.node].rotation =
-                cubicSpline[Quat[float32]]()
+              model.nodes[channel.target.node].rotation = cubicSpline[Quat]()
             of pWeights:
               discard
 
@@ -313,15 +312,16 @@ proc draw(
   node: Node,
   model: Model,
   shader: GLuint,
-  transform, view, proj: var Mat[4, 4, float32]
+  transform, view, proj: Mat4
 ) =
-  var trs: Mat[4, 4, float32]
+  var trs: Mat4
   if node.applyMatrix:
     trs = transform * node.matrix
   else:
-    trs = transform.translate(node.translation)
-    trs *= node.rotation.mat4f()
-    trs = trs.scale(node.scale)
+    trs = transform *
+        translate(node.translation) *
+        node.rotation.mat4() *
+        scale(node.scale)
 
   for kid in node.kids:
     model.nodes[kid].draw(model, shader, trs, view, proj)
@@ -334,10 +334,13 @@ proc draw(
     modelUniform = glGetUniformLocation(shader, "model")
     viewUniform = glGetUniformLocation(shader, "view")
     projUniform = glGetUniformLocation(shader, "proj")
+    modelArray = trs.toFloat32()
+    viewArray = view.toFloat32()
+    projArray = proj.toFloat32()
 
-  glUniformMatrix4fv(modelUniform, 1, GL_FALSE, trs.caddr)
-  glUniformMatrix4fv(viewUniform, 1, GL_FALSE, view.caddr)
-  glUniformMatrix4fv(projUniform, 1, GL_FALSE, proj.caddr)
+  glUniformMatrix4fv(modelUniform, 1, GL_FALSE, modelArray[0].addr)
+  glUniformMatrix4fv(viewUniform, 1, GL_FALSE, viewArray[0].addr)
+  glUniformMatrix4fv(projUniform, 1, GL_FALSE, projArray[0].addr)
 
   for primative in model.meshes[node.mesh].primatives:
     glBindVertexArray(primative.vertexArrayId)
@@ -368,11 +371,10 @@ proc draw(
         nil
       )
 
-proc draw*(model: Model, shader: GLuint, view, proj: var Mat[4, 4, float32]) =
+proc draw*(model: Model, shader: GLuint, view, proj: Mat4) =
   let scene = model.scenes[model.scene]
   for node in scene.nodes:
-    var transform = mat4f()
-    model.nodes[node].draw(model, shader, transform, view, proj)
+    model.nodes[node].draw(model, shader, identity(), view, proj)
 
 proc bindBuffer(
   model: Model,
@@ -768,9 +770,8 @@ proc loadModel*(file: string): Model =
 
       let values = entry["matrix"]
       assert len(values) == 16
-      for i in 0..<4:
-        for j in 0..<4:
-          node.matrix[i, j] = values[(i * 4) + j].getFloat()
+      for i in 0..<16:
+        node.matrix[i] = values[i].getFloat()
 
     if entry.hasKey("rotation"):
       let values = entry["rotation"]
