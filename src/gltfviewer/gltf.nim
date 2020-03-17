@@ -198,78 +198,115 @@ proc advanceAnimations*(model: Model, totalTime: float) =
         timeDelta = nextStartTime - prevStartTime
         normalizedTime = (time - prevStartTime) / timeDelta # Between [0, 1]
 
-      case channel.target.path:
-        of pTranslation:
-          case sampler.interpolation:
-            of iStep:
-              model.nodes[channel.target.node].translation = readVec3(
+      case sampler.interpolation:
+        of iStep:
+          case channel.target.path:
+            of pTranslation, pScale:
+              let transform = readVec3(
                 outputBuffer,
                 outputByteOffset,
                 animation.prevKey * output.kind.componentCount
               )
-            of iLinear:
-              let v0 = readVec3(
-                outputBuffer,
-                outputByteOffset,
-                animation.prevKey * output.kind.componentCount
-              )
-              let v1 = readVec3(
-                outputBuffer,
-                outputByteOffset,
-                nextKey * output.kind.componentCount
-              )
-              model.nodes[channel.target.node].translation =
-                lerp(v0, v1, normalizedTime)
-            of iCubicSpline:
-              discard
-        of pRotation:
-          case sampler.interpolation:
-            of iStep:
+
+              if channel.target.path == pTranslation:
+                model.nodes[channel.target.node].translation = transform
+              else:
+                model.nodes[channel.target.node].scale = transform
+            of pRotation:
               model.nodes[channel.target.node].rotation = readQuat(
                 outputBuffer,
                 outputByteOffset,
                 animation.prevKey * output.kind.componentCount
               )
-            of iLinear:
-              let q0 = readQuat(
-                outputBuffer,
-                outputByteOffset,
-                animation.prevKey * output.kind.componentCount
-              )
-              let q1 = readQuat(
-                outputBuffer,
-                outputByteOffset,
-                nextKey * output.kind.componentCount
-              )
+            of pWeights:
+              discard
+        of iLinear:
+          case channel.target.path:
+            of pTranslation, pScale:
+              let
+                v0 = readVec3(
+                  outputBuffer,
+                  outputByteOffset,
+                  animation.prevKey * output.kind.componentCount
+                )
+                v1 = readVec3(
+                  outputBuffer,
+                  outputByteOffset,
+                  nextKey * output.kind.componentCount
+                )
+                transform = lerp(v0, v1, normalizedTime)
+
+              if channel.target.path == pTranslation:
+                model.nodes[channel.target.node].translation = transform
+              else:
+                model.nodes[channel.target.node].scale = transform
+            of pRotation:
+              let
+                q0 = readQuat(
+                  outputBuffer,
+                  outputByteOffset,
+                  animation.prevKey * output.kind.componentCount
+                )
+                q1 = readQuat(
+                  outputBuffer,
+                  outputByteOffset,
+                  nextKey * output.kind.componentCount
+                )
               model.nodes[channel.target.node].rotation =
                 nlerp(q0, q1, normalizedTime)
-            of iCubicSpline:
+            of pWeights:
               discard
-        of pScale:
-          case sampler.interpolation:
-            of iStep:
-              model.nodes[channel.target.node].scale = readVec3(
-                outputBuffer,
-                outputByteOffset,
-                animation.prevKey * output.kind.componentCount
-              )
-            of iLinear:
-              let v0 = readVec3(
-                outputBuffer,
-                outputByteOffset,
-                animation.prevKey * output.kind.componentCount
-              )
-              let v1 = readVec3(
-                outputBuffer,
-                outputByteOffset,
-                nextKey * output.kind.componentCount
-              )
-              model.nodes[channel.target.node].scale =
-                lerp(v0, v1, normalizedTime)
-            of iCubicSpline:
+        of iCubicSpline:
+          let
+            t = normalizedTime
+            t2 = pow(normalizedTime, 2)
+            t3 = pow(normalizedTime, 3)
+            prevIndex = animation.prevKey * output.kind.componentCount * 3
+            nextIndex = nextKey * output.kind.componentCount * 3
+
+          template cubicSpline[T](): T =
+            var transform: T
+            for i in 0..<output.kind.componentCount:
+              let
+                v0 = read[float32](
+                  outputBuffer,
+                  outputByteOffset,
+                  prevIndex + i + output.kind.componentCount
+                )
+                a = timeDelta * read[float32](
+                  outputBuffer,
+                  outputByteOffset,
+                  nextIndex + i
+                )
+                b = timeDelta * read[float32](
+                  outputBuffer,
+                  outputByteOffset,
+                  prevIndex + i + (2 * output.kind.componentCount)
+                )
+                v1 = read[float32](
+                  outputBuffer,
+                  outputByteOffset,
+                  nextIndex + i + output.kind.componentCount
+                )
+
+              transform[i] = ((2*t3 - 3*t2 + 1) * v0) +
+                ((t3 - 2*t2 + t) * b) +
+                ((-2*t3 + 3*t2) * v1) +
+                ((t3 - t2) * a)
+
+            transform
+
+          case channel.target.path:
+            of pTranslation, pScale:
+              let transform = cubicSpline[Vec3]()
+              if channel.target.path == pTranslation:
+                model.nodes[channel.target.node].translation = transform
+              else:
+                model.nodes[channel.target.node].scale = transform
+            of pRotation:
+              model.nodes[channel.target.node].rotation = cubicSpline[Quat]()
+            of pWeights:
               discard
-        of pWeights:
-          discard
 
 proc draw(
   node: Node,
