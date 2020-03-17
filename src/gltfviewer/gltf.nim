@@ -184,7 +184,7 @@ proc advanceAnimations*(model: Model, totalTime: float) =
           inputByteOffset + (nextKey * sizeof(float32))
         )
         timeDelta = nextStartTime - prevStartTime
-        normalizedTime = (time - prevStartTime) / timeDelta # [0, 1]
+        normalizedTime = (time - prevStartTime) / timeDelta # Between [0, 1]
 
       template readVec3(index: int, v: ptr Vec3) =
         v.x = read[float32](
@@ -236,7 +236,7 @@ proc advanceAnimations*(model: Model, totalTime: float) =
                 tmpVec1.addr
               )
               model.nodes[channel.target.node].translation =
-                  lerp(tmpVec0, tmpVec1, normalizedTime)
+                lerp(tmpVec0, tmpVec1, normalizedTime)
             of iCubicSpline:
               discard
         of pRotation:
@@ -256,7 +256,7 @@ proc advanceAnimations*(model: Model, totalTime: float) =
                 tmpQuat1.addr
               )
               model.nodes[channel.target.node].rotation =
-                  nlerp(tmpQuat0, tmpQuat1, normalizedTime)
+                nlerp(tmpQuat0, tmpQuat1, normalizedTime)
             of iCubicSpline:
               discard
         of pScale:
@@ -276,7 +276,7 @@ proc advanceAnimations*(model: Model, totalTime: float) =
                 tmpVec1.addr
               )
               model.nodes[channel.target.node].scale =
-                  lerp(tmpVec0, tmpVec1, normalizedTime)
+                lerp(tmpVec0, tmpVec1, normalizedTime)
             of iCubicSpline:
               discard
         of pWeights:
