@@ -104,6 +104,10 @@ type
     # Model properties
     scene: Natural
 
+var
+  tmpVec0, tmpVec1: Vec3
+  tmpQuat0, tmpQuat1: Quat
+
 func size(componentType: GLenum): Natural =
   case componentType:
     of cGL_BYTE, cGL_UNSIGNED_BYTE:
@@ -171,50 +175,110 @@ proc advanceAnimations*(model: Model, totalTime: float) =
       animation.prevKey = clamp(nextKey - 1, 0, nextKey)
 
       let
-        prevValue = read[float32](
+        prevStartTime = read[float32](
           inputBuffer,
           inputByteOffset + (animation.prevKey * sizeof(float32))
         )
-        nextValue = read[float32](
+        nextStartTime = read[float32](
           inputBuffer,
           inputByteOffset + (nextKey * sizeof(float32))
         )
-        keyDelta = nextValue - prevValue
-        normalizedTime = (time - prevValue) / keyDelta
+        timeDelta = nextStartTime - prevStartTime
+        normalizedTime = (time - prevStartTime) / timeDelta # [0, 1]
+
+      template readVec3(index: int, v: ptr Vec3) =
+        v.x = read[float32](
+          outputBuffer,
+          outputByteOffset + (index * sizeof(float32))
+        )
+        v.y = read[float32](
+          outputBuffer,
+          outputByteOffset + ((index + 1) * sizeof(float32))
+        )
+        v.z = read[float32](
+          outputBuffer,
+          outputByteOffset + ((index + 2) * sizeof(float32))
+        )
+
+      template readQuat(index: int, q: ptr Quat) =
+        q.x = read[float32](
+          outputBuffer,
+          outputByteOffset + (index * sizeof(float32))
+        )
+        q.y = read[float32](
+          outputBuffer,
+          outputByteOffset + ((index + 1) * sizeof(float32))
+        )
+        q.z = read[float32](
+          outputBuffer,
+          outputByteOffset + ((index + 2) * sizeof(float32))
+        )
+        q.w = read[float32](
+          outputBuffer,
+          outputByteOffset + ((index + 3) * sizeof(float32))
+        )
 
       case channel.target.path:
         of pTranslation:
-          discard
+          case sampler.interpolation:
+            of iStep:
+              readVec3(
+                animation.prevKey * output.kind.componentCount,
+                model.nodes[channel.target.node].translation.addr
+              )
+            of iLinear:
+              readVec3(
+                animation.prevKey * output.kind.componentCount,
+                tmpVec0.addr
+              )
+              readVec3(
+                nextKey * output.kind.componentCount,
+                tmpVec1.addr
+              )
+              model.nodes[channel.target.node].translation =
+                  lerp(tmpVec0, tmpVec1, normalizedTime)
+            of iCubicSpline:
+              discard
         of pRotation:
-          if sampler.interpolation == iLinear:
-            template readQuat(index: int): Quat =
-              var q: Quat
-              q.x = read[float32](
-                outputBuffer,
-                outputByteOffset + (index * sizeof(float32))
+          case sampler.interpolation:
+            of iStep:
+              readQuat(
+                animation.prevKey * output.kind.componentCount,
+                model.nodes[channel.target.node].rotation.addr
               )
-              q.y = read[float32](
-                outputBuffer,
-                outputByteOffset + ((index + 1) * sizeof(float32))
+            of iLinear:
+              readQuat(
+                animation.prevKey * output.kind.componentCount,
+                tmpQuat0.addr
               )
-              q.z = read[float32](
-                outputBuffer,
-                outputByteOffset + ((index + 2) * sizeof(float32))
+              readQuat(
+                nextKey * output.kind.componentCount,
+                tmpQuat1.addr
               )
-              q.w = read[float32](
-                outputBuffer,
-                outputByteOffset + ((index + 3) * sizeof(float32))
-              )
-              q
-
-            let
-              q0 = readQuat(animation.prevKey)
-              q1 = readQuat(nextKey)
-
-          else:
-            discard
+              model.nodes[channel.target.node].rotation =
+                  nlerp(tmpQuat0, tmpQuat1, normalizedTime)
+            of iCubicSpline:
+              discard
         of pScale:
-          discard
+          case sampler.interpolation:
+            of iStep:
+              readVec3(
+                animation.prevKey * output.kind.componentCount,
+                model.nodes[channel.target.node].scale.addr
+              )
+            of iLinear:
+              readVec3(
+                animation.prevKey * output.kind.componentCount,
+                tmpVec0.addr
+              )
+              readVec3(
+                nextKey * output.kind.componentCount,
+                tmpVec1.addr
+              )
+              model.nodes[channel.target.node].scale =
+                  lerp(tmpVec0, tmpVec1, normalizedTime)
+            of iCubicSpline:
+              discard
         of pWeights:
           discard
 
@@ -324,8 +388,8 @@ proc bindTexture(model: Model, materialIndex: Natural) =
   let
     material = model.materials[materialIndex].addr
     baseColorTexture = material.pbrMetallicRoughness.baseColorTexture.addr
-    image = model.images[baseColorTexture.index].addr
-    sampler = model.samplers[baseColorTexture.index]
+    texture = model.textures[baseColorTexture.index]
+    image = model.images[texture.source].addr
 
   glGenTextures(1, baseColorTexture.textureId.addr)
   glBindTexture(GL_TEXTURE_2D, baseColorTexture.textureId)
@@ -342,10 +406,12 @@ proc bindTexture(model: Model, materialIndex: Natural) =
     image.data[0].addr
   )
 
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, sampler.magFilter)
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, sampler.minFilter)
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, sampler.wrapS)
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, sampler.wrapT)
+  if texture.sampler >= 0:
+    let sampler = model.samplers[texture.sampler]
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, sampler.magFilter)
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, sampler.minFilter)
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, sampler.wrapS)
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, sampler.wrapT)
 
   glGenerateMipmap(GL_TEXTURE_2D)
 
@@ -443,7 +509,12 @@ proc loadModel*(file: string): Model =
     for entry in jsonRoot["textures"]:
       var texture = Texture()
       texture.source = entry["source"].getInt()
-      texture.sampler = entry["sampler"].getInt()
+
+      if entry.hasKey("sampler"):
+        texture.sampler = entry["sampler"].getInt()
+      else:
+        texture.sampler = -1
+
       result.textures.add(texture)
 
   if jsonRoot.hasKey("images"):
