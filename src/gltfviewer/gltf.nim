@@ -134,6 +134,20 @@ func componentCount(accessorKind: AccessorKind): Natural =
     of atMAT4:
       16
 
+template read[T](buffer: ptr string, byteOffset: int, index = 0): auto =
+  cast[ptr T](buffer[byteOffset + (index * sizeof(T))].addr)[]
+
+template readVec3(buffer: ptr string, index: int, v: ptr Vec3) =
+  v.x = read[float32](buffer, outputByteOffset, index)
+  v.y = read[float32](buffer, outputByteOffset, index + 1)
+  v.z = read[float32](buffer, outputByteOffset, index + 2)
+
+template readQuat(buffer: ptr string, index: int, q: ptr Quat) =
+  q.x = read[float32](buffer, outputByteOffset, index)
+  q.y = read[float32](buffer, outputByteOffset, index + 1)
+  q.z = read[float32](buffer, outputByteOffset, index + 2)
+  q.w = read[float32](buffer, outputByteOffset, index + 3)
+
 proc advanceAnimations*(model: Model, totalTime: float) =
   for i in 0..<len(model.animations):
     var animation = model.animations[i].addr
@@ -150,15 +164,9 @@ proc advanceAnimations*(model: Model, totalTime: float) =
         inputByteOffset = input.byteOffset + inputBufferView.byteOffset
         outputByteOffset = output.byteOffset + outputBufferView.byteOffset
 
-      template read[T](buffer: ptr string, offset: int): auto =
-        cast[ptr T](buffer[offset].addr)[]
-
       let
         min = read[float32](inputBuffer, inputByteOffset)
-        max = read[float32](
-          inputBuffer,
-          inputByteOffset + ((input.count - 1) * sizeof(float32))
-        )
+        max = read[float32](inputBuffer, inputByteOffset, input.count - 1)
         time = max(totalTime mod max, min).float32
 
       if animation.prevTime > time:
@@ -168,7 +176,7 @@ proc advanceAnimations*(model: Model, totalTime: float) =
 
       var nextKey: int
       for i in animation.prevKey..<input.count:
-        if time <= read[float32](inputBuffer, inputByteOffset + (i * sizeof(float32))):
+        if time <= read[float32](inputBuffer, inputByteOffset, i):
           nextKey = clamp(i, 1, input.count - 1)
           break
 
@@ -177,61 +185,34 @@ proc advanceAnimations*(model: Model, totalTime: float) =
       let
         prevStartTime = read[float32](
           inputBuffer,
-          inputByteOffset + (animation.prevKey * sizeof(float32))
+          inputByteOffset,
+          animation.prevKey
         )
         nextStartTime = read[float32](
           inputBuffer,
-          inputByteOffset + (nextKey * sizeof(float32))
+          inputByteOffset,
+          nextKey
         )
         timeDelta = nextStartTime - prevStartTime
         normalizedTime = (time - prevStartTime) / timeDelta # Between [0, 1]
-
-      template readVec3(index: int, v: ptr Vec3) =
-        v.x = read[float32](
-          outputBuffer,
-          outputByteOffset + (index * sizeof(float32))
-        )
-        v.y = read[float32](
-          outputBuffer,
-          outputByteOffset + ((index + 1) * sizeof(float32))
-        )
-        v.z = read[float32](
-          outputBuffer,
-          outputByteOffset + ((index + 2) * sizeof(float32))
-        )
-
-      template readQuat(index: int, q: ptr Quat) =
-        q.x = read[float32](
-          outputBuffer,
-          outputByteOffset + (index * sizeof(float32))
-        )
-        q.y = read[float32](
-          outputBuffer,
-          outputByteOffset + ((index + 1) * sizeof(float32))
-        )
-        q.z = read[float32](
-          outputBuffer,
-          outputByteOffset + ((index + 2) * sizeof(float32))
-        )
-        q.w = read[float32](
-          outputBuffer,
-          outputByteOffset + ((index + 3) * sizeof(float32))
-        )
 
       case channel.target.path:
         of pTranslation:
           case sampler.interpolation:
             of iStep:
               readVec3(
+                outputBuffer,
                 animation.prevKey * output.kind.componentCount,
                 model.nodes[channel.target.node].translation.addr
               )
             of iLinear:
               readVec3(
+                outputBuffer,
                 animation.prevKey * output.kind.componentCount,
                 tmpVec0.addr
               )
               readVec3(
+                outputBuffer,
                 nextKey * output.kind.componentCount,
                 tmpVec1.addr
               )
@@ -243,15 +224,18 @@ proc advanceAnimations*(model: Model, totalTime: float) =
           case sampler.interpolation:
             of iStep:
               readQuat(
+                outputBuffer,
                 animation.prevKey * output.kind.componentCount,
                 model.nodes[channel.target.node].rotation.addr
               )
             of iLinear:
               readQuat(
+                outputBuffer,
                 animation.prevKey * output.kind.componentCount,
                 tmpQuat0.addr
               )
               readQuat(
+                outputBuffer,
                 nextKey * output.kind.componentCount,
                 tmpQuat1.addr
               )
@@ -263,15 +247,18 @@ proc advanceAnimations*(model: Model, totalTime: float) =
           case sampler.interpolation:
             of iStep:
               readVec3(
+                outputBuffer,
                 animation.prevKey * output.kind.componentCount,
                 model.nodes[channel.target.node].scale.addr
               )
             of iLinear:
               readVec3(
+                outputBuffer,
                 animation.prevKey * output.kind.componentCount,
                 tmpVec0.addr
               )
               readVec3(
+                outputBuffer,
                 nextKey * output.kind.componentCount,
                 tmpVec1.addr
               )
