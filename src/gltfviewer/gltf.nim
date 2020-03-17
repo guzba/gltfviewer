@@ -46,13 +46,11 @@ type
     sampler: Natural
     target: AnimationTarget
 
-  Interpolator = object
-    prevTime: float
-
   Animation = object
     samplers: seq[AnimationSampler]
     channels: seq[AnimationChannel]
-    interpolators: seq[Interpolator]
+    prevTime: float
+    prevKey: int
 
   AccessorKind = enum
     atSCALAR, atVEC2, atVEC3, atVEC4, atMAT2, atMAT3, atMAT4
@@ -132,25 +130,89 @@ func componentCount(accessorKind: AccessorKind): Natural =
     of atMAT4:
       16
 
-proc interpolate*(interpolator: Interpolator) =
-  discard
-
-proc advanceAnimations*(model: Model, elapsedTime: float) =
+proc advanceAnimations*(model: Model, totalTime: float) =
   for i in 0..<len(model.animations):
     var animation = model.animations[i].addr
     for j in 0..<len(animation.channels):
       let
         channel = animation.channels[j]
         sampler = animation.samplers[channel.sampler]
-        input = model.accessors[sampler.input].addr
-        output = model.accessors[sampler.output].addr
-        interpolator = animation.interpolators[j].addr
+        input = model.accessors[sampler.input]
+        output = model.accessors[sampler.output]
+        inputBufferView = model.bufferViews[input.bufferView]
+        outputBufferView = model.bufferViews[output.bufferView]
+        inputBuffer = model.buffers[inputBufferView.buffer].addr
+        outputBuffer = model.buffers[outputBufferView.buffer].addr
+        inputByteOffset = input.byteOffset + inputBufferView.byteOffset
+        outputByteOffset = output.byteOffset + outputBufferView.byteOffset
+
+      template read[T](buffer: ptr string, offset: int): auto =
+        cast[ptr T](buffer[offset].addr)[]
+
+      let
+        min = read[float32](inputBuffer, inputByteOffset)
+        max = read[float32](
+          inputBuffer,
+          inputByteOffset + ((input.count - 1) * sizeof(float32))
+        )
+        time = max(totalTime mod max, min).float32
+
+      if animation.prevTime > time:
+        animation.prevKey = 0
+
+      animation.prevTime = time
+
+      var nextKey: int
+      for i in animation.prevKey..<input.count:
+        if time <= read[float32](inputBuffer, inputByteOffset + (i * sizeof(float32))):
+          nextKey = clamp(i, 1, input.count - 1)
+          break
+
+      animation.prevKey = clamp(nextKey - 1, 0, nextKey)
+
+      let
+        prevValue = read[float32](
+          inputBuffer,
+          inputByteOffset + (animation.prevKey * sizeof(float32))
+        )
+        nextValue = read[float32](
+          inputBuffer,
+          inputByteOffset + (nextKey * sizeof(float32))
+        )
+        keyDelta = nextValue - prevValue
+        normalizedTime = (time - prevValue) / keyDelta
 
       case channel.target.path:
         of pTranslation:
           discard
         of pRotation:
-          discard
+          if sampler.interpolation == iLinear:
+            template readQuat(index: int): Quat =
+              var q: Quat
+              q.x = read[float32](
+                outputBuffer,
+                outputByteOffset + (index * sizeof(float32))
+              )
+              q.y = read[float32](
+                outputBuffer,
+                outputByteOffset + ((index + 1) * sizeof(float32))
+              )
+              q.z = read[float32](
+                outputBuffer,
+                outputByteOffset + ((index + 2) * sizeof(float32))
+              )
+              q.w = read[float32](
+                outputBuffer,
+                outputByteOffset + ((index + 3) * sizeof(float32))
+              )
+              q
+
+            let
+              q0 = readQuat(animation.prevKey)
+              q1 = readQuat(nextKey)
+
+          else:
+            discard
         of pScale:
           discard
         of pWeights:
@@ -492,7 +554,6 @@ proc loadModel*(file: string): Model =
             )
 
         animation.channels.add(animationChannel)
-        animation.interpolators.add(Interpolator())
 
       result.animations.add(animation)
 
