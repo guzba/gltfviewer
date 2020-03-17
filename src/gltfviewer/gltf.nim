@@ -133,25 +133,26 @@ func componentCount(accessorKind: AccessorKind): Natural =
 template read[T](buffer: ptr string, byteOffset: int, index = 0): auto =
   cast[ptr T](buffer[byteOffset + (index * sizeof(T))].addr)[]
 
-template readVec3(buffer: ptr string, index: int): Vec3 =
+template readVec3(buffer: ptr string, byteOffset, index: int): Vec3 =
   var v: Vec3
-  v.x = read[float32](buffer, outputByteOffset, index)
-  v.y = read[float32](buffer, outputByteOffset, index + 1)
-  v.z = read[float32](buffer, outputByteOffset, index + 2)
+  v.x = read[float32](buffer, byteOffset, index)
+  v.y = read[float32](buffer, byteOffset, index + 1)
+  v.z = read[float32](buffer, byteOffset, index + 2)
   v
 
-template readQuat(buffer: ptr string, index: int): Quat =
+template readQuat(buffer: ptr string, byteOffset, index: int): Quat =
   var q: Quat
-  q.x = read[float32](buffer, outputByteOffset, index)
-  q.y = read[float32](buffer, outputByteOffset, index + 1)
-  q.z = read[float32](buffer, outputByteOffset, index + 2)
-  q.w = read[float32](buffer, outputByteOffset, index + 3)
+  q.x = read[float32](buffer, byteOffset, index)
+  q.y = read[float32](buffer, byteOffset, index + 1)
+  q.z = read[float32](buffer, byteOffset, index + 2)
+  q.w = read[float32](buffer, byteOffset, index + 3)
   q
 
 proc advanceAnimations*(model: Model, totalTime: float) =
   for i in 0..<len(model.animations):
     var animation = model.animations[i].addr
     for j in 0..<len(animation.channels):
+      # Get the various things we need from the glTF tree
       let
         channel = animation.channels[j]
         sampler = animation.samplers[channel.sampler]
@@ -164,6 +165,7 @@ proc advanceAnimations*(model: Model, totalTime: float) =
         inputByteOffset = input.byteOffset + inputBufferView.byteOffset
         outputByteOffset = output.byteOffset + outputBufferView.byteOffset
 
+      # Ensure time is within the bounds of the animation interval
       let
         min = read[float32](inputBuffer, inputByteOffset)
         max = read[float32](inputBuffer, inputByteOffset, input.count - 1)
@@ -202,15 +204,18 @@ proc advanceAnimations*(model: Model, totalTime: float) =
             of iStep:
               model.nodes[channel.target.node].translation = readVec3(
                 outputBuffer,
+                outputByteOffset,
                 animation.prevKey * output.kind.componentCount
               )
             of iLinear:
               let v0 = readVec3(
                 outputBuffer,
+                outputByteOffset,
                 animation.prevKey * output.kind.componentCount
               )
               let v1 = readVec3(
                 outputBuffer,
+                outputByteOffset,
                 nextKey * output.kind.componentCount
               )
               model.nodes[channel.target.node].translation =
@@ -222,15 +227,18 @@ proc advanceAnimations*(model: Model, totalTime: float) =
             of iStep:
               model.nodes[channel.target.node].rotation = readQuat(
                 outputBuffer,
+                outputByteOffset,
                 animation.prevKey * output.kind.componentCount
               )
             of iLinear:
               let q0 = readQuat(
                 outputBuffer,
+                outputByteOffset,
                 animation.prevKey * output.kind.componentCount
               )
               let q1 = readQuat(
                 outputBuffer,
+                outputByteOffset,
                 nextKey * output.kind.componentCount
               )
               model.nodes[channel.target.node].rotation =
@@ -242,15 +250,18 @@ proc advanceAnimations*(model: Model, totalTime: float) =
             of iStep:
               model.nodes[channel.target.node].scale = readVec3(
                 outputBuffer,
+                outputByteOffset,
                 animation.prevKey * output.kind.componentCount
               )
             of iLinear:
               let v0 = readVec3(
                 outputBuffer,
+                outputByteOffset,
                 animation.prevKey * output.kind.componentCount
               )
               let v1 = readVec3(
                 outputBuffer,
+                outputByteOffset,
                 nextKey * output.kind.componentCount
               )
               model.nodes[channel.target.node].scale =
