@@ -104,10 +104,6 @@ type
     # Model properties
     scene: Natural
 
-var
-  tmpVec0, tmpVec1: Vec3
-  tmpQuat0, tmpQuat1: Quat
-
 func size(componentType: GLenum): Natural =
   case componentType:
     of cGL_BYTE, cGL_UNSIGNED_BYTE:
@@ -137,16 +133,20 @@ func componentCount(accessorKind: AccessorKind): Natural =
 template read[T](buffer: ptr string, byteOffset: int, index = 0): auto =
   cast[ptr T](buffer[byteOffset + (index * sizeof(T))].addr)[]
 
-template readVec3(buffer: ptr string, index: int, v: ptr Vec3) =
+template readVec3(buffer: ptr string, index: int): Vec3 =
+  var v: Vec3
   v.x = read[float32](buffer, outputByteOffset, index)
   v.y = read[float32](buffer, outputByteOffset, index + 1)
   v.z = read[float32](buffer, outputByteOffset, index + 2)
+  v
 
-template readQuat(buffer: ptr string, index: int, q: ptr Quat) =
+template readQuat(buffer: ptr string, index: int): Quat =
+  var q: Quat
   q.x = read[float32](buffer, outputByteOffset, index)
   q.y = read[float32](buffer, outputByteOffset, index + 1)
   q.z = read[float32](buffer, outputByteOffset, index + 2)
   q.w = read[float32](buffer, outputByteOffset, index + 3)
+  q
 
 proc advanceAnimations*(model: Model, totalTime: float) =
   for i in 0..<len(model.animations):
@@ -200,70 +200,61 @@ proc advanceAnimations*(model: Model, totalTime: float) =
         of pTranslation:
           case sampler.interpolation:
             of iStep:
-              readVec3(
+              model.nodes[channel.target.node].translation = readVec3(
                 outputBuffer,
-                animation.prevKey * output.kind.componentCount,
-                model.nodes[channel.target.node].translation.addr
+                animation.prevKey * output.kind.componentCount
               )
             of iLinear:
-              readVec3(
+              let v0 = readVec3(
                 outputBuffer,
-                animation.prevKey * output.kind.componentCount,
-                tmpVec0.addr
+                animation.prevKey * output.kind.componentCount
               )
-              readVec3(
+              let v1 = readVec3(
                 outputBuffer,
-                nextKey * output.kind.componentCount,
-                tmpVec1.addr
+                nextKey * output.kind.componentCount
               )
               model.nodes[channel.target.node].translation =
-                lerp(tmpVec0, tmpVec1, normalizedTime)
+                lerp(v0, v1, normalizedTime)
             of iCubicSpline:
               discard
         of pRotation:
           case sampler.interpolation:
             of iStep:
-              readQuat(
+              model.nodes[channel.target.node].rotation = readQuat(
                 outputBuffer,
-                animation.prevKey * output.kind.componentCount,
-                model.nodes[channel.target.node].rotation.addr
+                animation.prevKey * output.kind.componentCount
               )
             of iLinear:
-              readQuat(
+              let q0 = readQuat(
                 outputBuffer,
-                animation.prevKey * output.kind.componentCount,
-                tmpQuat0.addr
+                animation.prevKey * output.kind.componentCount
               )
-              readQuat(
+              let q1 = readQuat(
                 outputBuffer,
-                nextKey * output.kind.componentCount,
-                tmpQuat1.addr
+                nextKey * output.kind.componentCount
               )
               model.nodes[channel.target.node].rotation =
-                nlerp(tmpQuat0, tmpQuat1, normalizedTime)
+                nlerp(q0, q1, normalizedTime)
             of iCubicSpline:
               discard
         of pScale:
           case sampler.interpolation:
             of iStep:
-              readVec3(
+              model.nodes[channel.target.node].scale = readVec3(
                 outputBuffer,
-                animation.prevKey * output.kind.componentCount,
-                model.nodes[channel.target.node].scale.addr
+                animation.prevKey * output.kind.componentCount
               )
             of iLinear:
-              readVec3(
+              let v0 = readVec3(
                 outputBuffer,
-                animation.prevKey * output.kind.componentCount,
-                tmpVec0.addr
+                animation.prevKey * output.kind.componentCount
               )
-              readVec3(
+              let v1 = readVec3(
                 outputBuffer,
-                nextKey * output.kind.componentCount,
-                tmpVec1.addr
+                nextKey * output.kind.componentCount
               )
               model.nodes[channel.target.node].scale =
-                lerp(tmpVec0, tmpVec1, normalizedTime)
+                lerp(v0, v1, normalizedTime)
             of iCubicSpline:
               discard
         of pWeights:
