@@ -663,26 +663,7 @@ proc loadModel*(file: string): Model =
     accessor.bufferView = entry["bufferView"].getInt()
     accessor.byteOffset = entry{"byteOffset"}.getInt()
     accessor.count = entry["count"].getInt()
-
-    let componentType = entry["componentType"].getInt()
-    case componentType:
-      of 5120:
-        accessor.componentType = cGL_BYTE
-      of 5121:
-        accessor.componentType = cGL_UNSIGNED_BYTE
-      of 5122:
-        accessor.componentType = cGL_SHORT
-      of 5123:
-        accessor.componentType = cGL_UNSIGNED_SHORT
-      of 5125:
-        accessor.componentType = GL_UNSIGNED_INT
-      of 5126:
-        accessor.componentType = cGL_FLOAT
-      else:
-        raise newException(
-          Exception,
-          &"Invalid accessor componentType {componentType}"
-        )
+    accessor.componentType = entry["componentType"].getInt().GLenum
 
     let accessorKind = entry["type"].getStr()
     case accessorKind:
