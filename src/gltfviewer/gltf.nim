@@ -371,10 +371,10 @@ proc draw(
         nil
       )
 
-proc draw*(model: Model, shader: GLuint, view, proj: Mat4) =
+proc draw*(model: Model, shader: GLuint, transform, view, proj: Mat4) =
   let scene = model.scenes[model.scene]
   for node in scene.nodes:
-    model.nodes[node].draw(model, shader, identity(), view, proj)
+    model.nodes[node].draw(model, shader, transform, view, proj)
 
 proc bindBuffer(
   model: Model,

@@ -12,9 +12,8 @@ var
   model: Model
   mousePos, mousePosPrev, mouseDelta: Vec2
   mouseClicked: bool
-  buttonDown = newSeq[bool](348)
-  cameraHpr = vec3(0, PI/2, 0)
-  cameraPos = vec3(0, 0, 5)
+  hpr: Vec3
+  mouseWheelDelta, zoom = 40.0
   view, proj: Mat4
   startTime: float
 
@@ -42,18 +41,11 @@ proc onKey(
   window: Window,
   key, scancode, action, modifiers: cint
 ) {.cdecl.} =
-  if action == RELEASE:
-    buttonDown[key] = false
-    return
-
   if action != PRESS:
     return
-
   if key == KEY_ESCAPE:
     window.setWindowShouldClose(1)
     return
-
-  buttonDown[key] = true
 
   if key == KEY_LEFT:
     activeModel = max(activeModel - 1, 0)
@@ -77,8 +69,12 @@ proc onMouseButton(
   elif action == PRESS:
     mouseClicked = true
 
+proc onScroll(window: Window, xoffset, yoffset: cdouble) {.cdecl.} =
+  mouseWheelDelta += yoffset
+
 discard window.setKeyCallback(onKey)
 discard window.setMouseButtonCallback(onMouseButton)
+discard window.setScrollCallback(onScroll)
 
 loadExtensions()
 
@@ -120,32 +116,20 @@ while windowShouldClose(window) == 0:
     mouseDelta = mousePos - mousePosPrev
     mousePosPrev = mousePos
 
-  let fov = (
-    rotateX(cameraHpr.y) * rotateZ(cameraHpr.x)
-  ).inverse()
+  if mouseClicked:
+    hpr.x -= mouseDelta.x / 100
+    hpr.y -= mouseDelta.y / 100
 
-  const moveSpeed = -0.25
-  if buttonDown[KEY_W]:
-    cameraPos = cameraPos + fov.fov * moveSpeed
-  if buttonDown[KEY_S]:
-    cameraPos = cameraPos - fov.fov * moveSpeed
-  if buttonDown[KEY_D]:
-    cameraPos = cameraPos - fov.right * moveSpeed
-  if buttonDown[KEY_A]:
-    cameraPos = cameraPos + fov.right * moveSpeed
-  if buttonDown[KEY_E]:
-    cameraPos = cameraPos - fov.up * moveSpeed
-  if buttonDown[KEY_Q]:
-    cameraPos = cameraPos + fov.up * moveSpeed
+  zoom += mouseWheelDelta * 4
+  mouseWheelDelta = 0
 
-  cameraHpr.x -= mouseDelta.x / 300
-  cameraHpr.y -= mouseDelta.y / 300
+  let transform = translate(vec3(0, 0, -zoom)) * rotateX(hpr.y) * rotateY(hpr.x)
 
-  view = rotateX(cameraHpr.y) * rotateZ(cameraHpr.x) * translate(-cameraPos)
+  view = identity()
   proj = perspective(45, framebufferWidth / framebufferHeight, 0.1, 1000)
 
   model.advanceAnimations(epochTime() - startTime)
-  model.draw(shader, view, proj)
+  model.draw(shader, transform, view, proj)
 
   var error: GLenum
   while (error = glGetError(); error != GL_NO_ERROR):
