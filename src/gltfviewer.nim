@@ -28,7 +28,7 @@ if init() == 0:
   raise newException(Exception, "Failed to initialize GLFW")
 
 windowHint(CONTEXT_VERSION_MAJOR, 4)
-windowHint(CONTEXT_VERSION_MINOR, 0)
+windowHint(CONTEXT_VERSION_MINOR, 1)
 windowHint(OPENGL_FORWARD_COMPAT, TRUE)
 windowHint(OPENGL_PROFILE, OPENGL_CORE_PROFILE)
 
