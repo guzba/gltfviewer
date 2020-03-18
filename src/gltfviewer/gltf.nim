@@ -84,7 +84,7 @@ type
     rotation: Quat
     translation, scale: Vec3
 
-  Scene* = ref object
+  Scene = object
     nodes: seq[Natural]
 
   Model* = ref object

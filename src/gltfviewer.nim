@@ -91,7 +91,7 @@ glEnable(GL_MULTISAMPLE)
 
 glClearColor(1, 1, 1, 1)
 
-# load the first model while starting up
+# Load the first model while starting up
 model = loadModel(joinPath(
   "models", models[activeModel], "glTF", &"{models[activeModel]}.gltf"
 ))
