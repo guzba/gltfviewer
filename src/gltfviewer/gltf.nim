@@ -1,4 +1,4 @@
-import json, nimPNG, opengl, os, strformat, strutils, vmath
+import base64, json, nimPNG, opengl, os, strformat, strutils, vmath
 
 type
   BufferView = object
@@ -509,8 +509,8 @@ proc loadModel*(file: string): Model =
     let uri = entry["uri"].getStr()
 
     var data: string
-    if uri.startsWith("data:"):
-      discard
+    if uri.startsWith("data:application/octet-stream"):
+      data = decode(uri.split(',')[1])
     else:
       data = readFile(joinPath(modelDir, uri))
 
@@ -547,17 +547,21 @@ proc loadModel*(file: string): Model =
     for entry in jsonRoot["images"]:
       var image = Image()
 
+      var png: PNGResult
       if entry.hasKey("uri"):
         let uri = entry["uri"].getStr()
-        if uri.endsWith(".png"):
-          let png = loadPNG24(joinPath(modelDir, uri))
-          image.width = png.width
-          image.height = png.height
-          image.data = png.data
+        if uri.startsWith("data:image/png"):
+          png = decodePNG24(decode(uri.split(',')[1]))
+        elif uri.endsWith(".png"):
+          png = loadPNG24(joinPath(modelDir, uri))
         else:
           raise newException(Exception, &"Unsupported file extension {uri}")
       else:
         raise newException(Exception, "Unsupported image type")
+
+      image.width = png.width
+      image.height = png.height
+      image.data = png.data
 
       result.images.add(image)
 
