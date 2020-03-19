@@ -45,11 +45,13 @@ type
     sampler: Natural
     target: AnimationTarget
 
+  AnimationState = object
+    prevTime: float
+    prevKey: int
+
   Animation = object
     samplers: seq[AnimationSampler]
     channels: seq[AnimationChannel]
-    prevTime: float
-    prevKey: int
 
   AccessorKind = enum
     atSCALAR, atVEC2, atVEC3, atVEC4, atMAT2, atMAT3, atMAT4
@@ -101,6 +103,7 @@ type
 
     # State
     bufferIds, textureIds, vertexArrayIds: seq[GLuint]
+    animationState: seq[AnimationState]
 
     # Model properties
     scene: Natural
@@ -151,7 +154,9 @@ template readQuat(buffer: ptr string, byteOffset, index: int): Quat =
 
 proc advanceAnimations*(model: Model, totalTime: float) =
   for animationIndex in 0..<len(model.animations):
-    var animation = model.animations[animationIndex].addr
+    let animation = model.animations[animationIndex]
+    var animationState = model.animationState[animationIndex]
+
     for channelIndex in 0..<len(animation.channels):
       # Get the various things we need from the glTF tree
       let
@@ -172,24 +177,24 @@ proc advanceAnimations*(model: Model, totalTime: float) =
         max = read[float32](inputBuffer, inputByteOffset, input.count - 1)
         time = max(totalTime mod max, min).float32
 
-      if animation.prevTime > time:
-        animation.prevKey = 0
+      if animationState.prevTime > time:
+        animationState.prevKey = 0
 
-      animation.prevTime = time
+      animationState.prevTime = time
 
       var nextKey: int
-      for i in animation.prevKey..<input.count:
+      for i in animationState.prevKey..<input.count:
         if time <= read[float32](inputBuffer, inputByteOffset, i):
           nextKey = clamp(i, 1, input.count - 1)
           break
 
-      animation.prevKey = clamp(nextKey - 1, 0, nextKey)
+      animationState.prevKey = clamp(nextKey - 1, 0, nextKey)
 
       let
         prevStartTime = read[float32](
           inputBuffer,
           inputByteOffset,
-          animation.prevKey
+          animationState.prevKey
         )
         nextStartTime = read[float32](
           inputBuffer,
@@ -206,7 +211,7 @@ proc advanceAnimations*(model: Model, totalTime: float) =
               let transform = readVec3(
                 outputBuffer,
                 outputByteOffset,
-                animation.prevKey * output.kind.componentCount
+                animationState.prevKey * output.kind.componentCount
               )
 
               if channel.target.path == pTranslation:
@@ -217,7 +222,7 @@ proc advanceAnimations*(model: Model, totalTime: float) =
               model.nodes[channel.target.node].rotation = readQuat(
                 outputBuffer,
                 outputByteOffset,
-                animation.prevKey * output.kind.componentCount
+                animationState.prevKey * output.kind.componentCount
               )
             of pWeights:
               discard
@@ -228,7 +233,7 @@ proc advanceAnimations*(model: Model, totalTime: float) =
                 v0 = readVec3(
                   outputBuffer,
                   outputByteOffset,
-                  animation.prevKey * output.kind.componentCount
+                  animationState.prevKey * output.kind.componentCount
                 )
                 v1 = readVec3(
                   outputBuffer,
@@ -246,7 +251,7 @@ proc advanceAnimations*(model: Model, totalTime: float) =
                 q0 = readQuat(
                   outputBuffer,
                   outputByteOffset,
-                  animation.prevKey * output.kind.componentCount
+                  animationState.prevKey * output.kind.componentCount
                 )
                 q1 = readQuat(
                   outputBuffer,
@@ -262,7 +267,7 @@ proc advanceAnimations*(model: Model, totalTime: float) =
             t = normalizedTime
             t2 = pow(normalizedTime, 2)
             t3 = pow(normalizedTime, 3)
-            prevIndex = animation.prevKey * output.kind.componentCount * 3
+            prevIndex = animationState.prevKey * output.kind.componentCount * 3
             nextIndex = nextKey * output.kind.componentCount * 3
 
           template cubicSpline[T](): T =
@@ -359,7 +364,7 @@ proc draw(
     # Bind the material texture (or 0 to ensure no previous texture is bound)
     glBindTexture(GL_TEXTURE_2D, textureId)
 
-    var sampleTexUniform = glGetUniformLocation(shader, "sampleTex")
+    let sampleTexUniform = glGetUniformLocation(shader, "sampleTex")
     glUniform1i(sampleTexUniform, textureId.GLint)
 
     if primative.indices < 0:
@@ -456,6 +461,7 @@ proc uploadToGpu*(model: Model) =
   model.bufferIds.setLen(len(model.accessors))
   model.textureIds.setLen(len(model.textures))
   model.vertexArrayIds.setLen(len(model.primatives))
+  model.animationState.setLen(len(model.animations))
 
   for node in model.nodes:
     if node.mesh < 0:
