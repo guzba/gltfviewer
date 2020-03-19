@@ -59,7 +59,6 @@ type
     byteOffset, count: Natural
     componentType: GLenum
     kind: AccessorKind
-    bufferId: GLuint
 
   PrimativeAttributes = object
     position, normal, color0, texcoord0: int
@@ -68,11 +67,10 @@ type
     attributes: PrimativeAttributes
     indices, material: int
     mode: GLenum
-    vertexArrayId: GLuint
 
   Mesh = object
     name: string
-    primatives: seq[Primative]
+    primatives: seq[Natural]
 
   Node = object
     name: string
@@ -96,12 +94,13 @@ type
     animations: seq[Animation]
     materials: seq[Material]
     accessors: seq[Accessor]
+    primatives: seq[Primative]
     meshes: seq[Mesh]
     nodes: seq[Node]
     scenes: seq[Scene]
 
-    # OpenGL state
-    textureIds: seq[GLuint]
+    # State
+    bufferIds, textureIds, vertexArrayIds: seq[GLuint]
 
     # Model properties
     scene: Natural
@@ -344,8 +343,10 @@ proc draw(
   glUniformMatrix4fv(viewUniform, 1, GL_FALSE, viewArray[0].addr)
   glUniformMatrix4fv(projUniform, 1, GL_FALSE, projArray[0].addr)
 
-  for primative in model.meshes[node.mesh].primatives:
-    glBindVertexArray(primative.vertexArrayId)
+  for primativeIndex in model.meshes[node.mesh].primatives:
+    let primative = model.primatives[primativeIndex]
+
+    glBindVertexArray(model.vertexArrayIds[primativeIndex])
 
     var textureId: GLuint
     if primative.material >= 0:
@@ -366,7 +367,7 @@ proc draw(
       glDrawArrays(primative.mode, 0, positionAccessor.count.cint)
     else:
       let indicesAccessor = model.accessors[primative.indices]
-      glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, indicesAccessor.bufferId)
+      glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, model.bufferIds[primative.indices])
       glDrawElements(
         primative.mode,
         indicesAccessor.count.GLint,
@@ -386,15 +387,19 @@ proc bindBuffer(
   vertexAttribIndex: int
 ) =
   let
-    accessor = model.accessors[accessorIndex].addr
+    accessor = model.accessors[accessorIndex]
     bufferView = model.bufferViews[accessor.bufferView]
     byteOffset = accessor.byteOffset + bufferView.byteOffset
     byteLength = accessor.count *
         accessor.kind.componentCount() *
         accessor.componentType.size()
 
-  glGenBuffers(1, accessor.bufferId.addr)
-  glBindBuffer(GL_ARRAY_BUFFER, accessor.bufferId)
+  var bufferId: GLuint
+  glGenBuffers(1, bufferId.addr)
+  glBindBuffer(GL_ARRAY_BUFFER, bufferId)
+
+  model.bufferIds[accessorIndex] = bufferId
+
   glBufferData(
     GL_ARRAY_BUFFER,
     byteLength,
@@ -448,15 +453,22 @@ proc bindTexture(model: Model, materialIndex: Natural) =
   glGenerateMipmap(GL_TEXTURE_2D)
 
 proc uploadToGpu*(model: Model) =
+  model.bufferIds.setLen(len(model.accessors))
   model.textureIds.setLen(len(model.textures))
+  model.vertexArrayIds.setLen(len(model.primatives))
 
   for node in model.nodes:
     if node.mesh < 0:
       continue
 
-    for primative in model.meshes[node.mesh].primatives.mitems:
-      glGenVertexArrays(1, primative.vertexArrayId.addr)
-      glBindVertexArray(primative.vertexArrayId)
+    for primativeIndex in model.meshes[node.mesh].primatives:
+      let primative = model.primatives[primativeIndex]
+
+      var vertexArrayId: GLuint
+      glGenVertexArrays(1, vertexArrayId.addr)
+      glBindVertexArray(vertexArrayId)
+
+      model.vertexArrayIds[primativeIndex] = vertexArrayId
 
       model.bindBuffer(primative.attributes.position, GL_ARRAY_BUFFER, 0)
 
@@ -476,22 +488,12 @@ proc uploadToGpu*(model: Model) =
             model.bindTexture(primative.material)
 
 proc clearFromGpu*(model: Model) =
-  var bufferIds, vertexArrayIds: seq[GLuint]
+  glDeleteVertexArrays(
+    len(model.vertexArrayIds).GLint,
+    model.vertexArrayIds[0].addr
+  )
 
-  for accessor in model.accessors.mitems:
-    bufferIds.add(accessor.bufferId)
-    accessor.bufferId = 0
-
-  for node in model.nodes:
-    if node.mesh < 0:
-      continue
-
-    for primative in model.meshes[node.mesh].primatives.mitems:
-      vertexArrayIds.add(primative.vertexArrayId)
-      primative.vertexArrayId = 0
-
-  glDeleteVertexArrays(len(vertexArrayIds).GLint, vertexArrayIds[0].addr)
-  glDeleteBuffers(len(bufferIds).GLint, bufferIds[0].addr)
+  glDeleteBuffers(len(model.bufferIds).GLint, model.bufferIds[0].addr)
 
   if len(model.textureIds) > 0:
     glDeleteTextures(len(model.textureIds).GLint, model.textureIds[0].addr)
@@ -733,7 +735,9 @@ proc loadModel*(file: string): Model =
       else:
         primative.mode = GL_TRIANGLES
 
-      mesh.primatives.add(primative)
+      result.primatives.add(primative)
+
+      mesh.primatives.add(len(result.primatives) - 1)
 
     result.meshes.add(mesh)
 
