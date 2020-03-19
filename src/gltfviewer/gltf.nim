@@ -150,12 +150,12 @@ template readQuat(buffer: ptr string, byteOffset, index: int): Quat =
   q
 
 proc advanceAnimations*(model: Model, totalTime: float) =
-  for i in 0..<len(model.animations):
-    var animation = model.animations[i].addr
-    for j in 0..<len(animation.channels):
+  for animationIndex in 0..<len(model.animations):
+    var animation = model.animations[animationIndex].addr
+    for channelIndex in 0..<len(animation.channels):
       # Get the various things we need from the glTF tree
       let
-        channel = animation.channels[j]
+        channel = animation.channels[channelIndex]
         sampler = animation.samplers[channel.sampler]
         input = model.accessors[sampler.input]
         output = model.accessors[sampler.output]
@@ -736,7 +736,6 @@ proc loadModel*(file: string): Model =
         primative.mode = GL_TRIANGLES
 
       result.primatives.add(primative)
-
       mesh.primatives.add(len(result.primatives) - 1)
 
     result.meshes.add(mesh)
