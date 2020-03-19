@@ -57,8 +57,7 @@ type
     atSCALAR, atVEC2, atVEC3, atVEC4, atMAT2, atMAT3, atMAT4
 
   Accessor = object
-    bufferView: int
-    byteOffset, count: Natural
+    bufferView, byteOffset, count: Natural
     componentType: GLenum
     kind: AccessorKind
 
@@ -336,10 +335,12 @@ proc draw(
   if node.mesh < 0:
     return
 
-  var
+  let
     modelUniform = glGetUniformLocation(shader, "model")
     viewUniform = glGetUniformLocation(shader, "view")
     projUniform = glGetUniformLocation(shader, "proj")
+
+  var
     modelArray = trs.toFloat32()
     viewArray = view.toFloat32()
     projArray = proj.toFloat32()
