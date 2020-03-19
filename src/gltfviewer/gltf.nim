@@ -18,7 +18,6 @@ type
 
   BaseColorTexture = object
     index: int
-    textureId: GLuint
 
   PBRMetallicRoughness = object
     apply: bool
@@ -100,6 +99,9 @@ type
     meshes: seq[Mesh]
     nodes: seq[Node]
     scenes: seq[Scene]
+
+    # OpenGL state
+    textureIds: seq[GLuint]
 
     # Model properties
     scene: Natural
@@ -349,8 +351,9 @@ proc draw(
     if primative.material >= 0:
       let material = model.materials[primative.material]
       if material.pbrMetallicRoughness.apply:
-        if material.pbrMetallicRoughness.baseColorTexture.index >= 0:
-          textureId = material.pbrMetallicRoughness.baseColorTexture.textureId
+        let textureIndex = material.pbrMetallicRoughness.baseColorTexture.index
+        if textureIndex >= 0:
+          textureId = model.textureIds[textureIndex]
 
     # Bind the material texture (or 0 to ensure no previous texture is bound)
     glBindTexture(GL_TEXTURE_2D, textureId)
@@ -412,13 +415,16 @@ proc bindBuffer(
 
 proc bindTexture(model: Model, materialIndex: Natural) =
   let
-    material = model.materials[materialIndex].addr
-    baseColorTexture = material.pbrMetallicRoughness.baseColorTexture.addr
+    material = model.materials[materialIndex]
+    baseColorTexture = material.pbrMetallicRoughness.baseColorTexture
     texture = model.textures[baseColorTexture.index]
     image = model.images[texture.source].addr
 
-  glGenTextures(1, baseColorTexture.textureId.addr)
-  glBindTexture(GL_TEXTURE_2D, baseColorTexture.textureId)
+  var textureId: GLuint
+  glGenTextures(1, textureId.addr)
+  glBindTexture(GL_TEXTURE_2D, textureId)
+
+  model.textureIds[baseColorTexture.index] = textureId
 
   glTexImage2D(
     GL_TEXTURE_2D,
@@ -442,6 +448,8 @@ proc bindTexture(model: Model, materialIndex: Natural) =
   glGenerateMipmap(GL_TEXTURE_2D)
 
 proc uploadToGpu*(model: Model) =
+  model.textureIds.setLen(len(model.textures))
+
   for node in model.nodes:
     if node.mesh < 0:
       continue
@@ -468,7 +476,7 @@ proc uploadToGpu*(model: Model) =
             model.bindTexture(primative.material)
 
 proc clearFromGpu*(model: Model) =
-  var bufferIds, textureIds, vertexArrayIds: seq[GLuint]
+  var bufferIds, vertexArrayIds: seq[GLuint]
 
   for accessor in model.accessors.mitems:
     bufferIds.add(accessor.bufferId)
@@ -482,20 +490,12 @@ proc clearFromGpu*(model: Model) =
       vertexArrayIds.add(primative.vertexArrayId)
       primative.vertexArrayId = 0
 
-      if primative.material < 0:
-        return
-
-      let material = model.materials[primative.material]
-      if material.pbrMetallicRoughness.apply:
-        let baseColorTexture = material.pbrMetallicRoughness.baseColorTexture
-        if baseColorTexture.index >= 0:
-          textureIds.add(baseColorTexture.textureId)
-
   glDeleteVertexArrays(len(vertexArrayIds).GLint, vertexArrayIds[0].addr)
   glDeleteBuffers(len(bufferIds).GLint, bufferIds[0].addr)
 
-  if len(textureIds) > 0:
-    glDeleteTextures(len(textureIds).GLint, textureIds[0].addr)
+  if len(model.textureIds) > 0:
+    glDeleteTextures(len(model.textureIds).GLint, model.textureIds[0].addr)
+    model.textureIds.setLen(0)
 
 proc loadModel*(file: string): Model =
   result = Model()
