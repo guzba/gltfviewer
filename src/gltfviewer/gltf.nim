@@ -61,17 +61,17 @@ type
     componentType: GLenum
     kind: AccessorKind
 
-  PrimativeAttributes = object
+  PrimitiveAttributes = object
     position, normal, color0, texcoord0: int
 
-  Primative = object
-    attributes: PrimativeAttributes
+  Primitive = object
+    attributes: PrimitiveAttributes
     indices, material: int
     mode: GLenum
 
   Mesh = object
     name: string
-    primatives: seq[Natural]
+    primitives: seq[Natural]
 
   Node = object
     name: string
@@ -95,7 +95,7 @@ type
     animations: seq[Animation]
     materials: seq[Material]
     accessors: seq[Accessor]
-    primatives: seq[Primative]
+    primitives: seq[Primitive]
     meshes: seq[Mesh]
     nodes: seq[Node]
     scenes: seq[Scene]
@@ -349,14 +349,14 @@ proc draw(
   glUniformMatrix4fv(viewUniform, 1, GL_FALSE, viewArray[0].addr)
   glUniformMatrix4fv(projUniform, 1, GL_FALSE, projArray[0].addr)
 
-  for primativeIndex in model.meshes[node.mesh].primatives:
-    let primative = model.primatives[primativeIndex]
+  for primitiveIndex in model.meshes[node.mesh].primitives:
+    let primitive = model.primitives[primitiveIndex]
 
-    glBindVertexArray(model.vertexArrayIds[primativeIndex])
+    glBindVertexArray(model.vertexArrayIds[primitiveIndex])
 
     var textureId: GLuint
-    if primative.material >= 0:
-      let material = model.materials[primative.material]
+    if primitive.material >= 0:
+      let material = model.materials[primitive.material]
       if material.pbrMetallicRoughness.apply:
         let textureIndex = material.pbrMetallicRoughness.baseColorTexture.index
         if textureIndex >= 0:
@@ -368,14 +368,14 @@ proc draw(
     let sampleTexUniform = glGetUniformLocation(shader, "sampleTex")
     glUniform1i(sampleTexUniform, textureId.GLint)
 
-    if primative.indices < 0:
-      let positionAccessor = model.accessors[primative.attributes.position]
-      glDrawArrays(primative.mode, 0, positionAccessor.count.cint)
+    if primitive.indices < 0:
+      let positionAccessor = model.accessors[primitive.attributes.position]
+      glDrawArrays(primitive.mode, 0, positionAccessor.count.cint)
     else:
-      let indicesAccessor = model.accessors[primative.indices]
-      glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, model.bufferIds[primative.indices])
+      let indicesAccessor = model.accessors[primitive.indices]
+      glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, model.bufferIds[primitive.indices])
       glDrawElements(
-        primative.mode,
+        primitive.mode,
         indicesAccessor.count.GLint,
         indicesAccessor.componentType,
         nil
@@ -461,38 +461,38 @@ proc bindTexture(model: Model, materialIndex: Natural) =
 proc uploadToGpu*(model: Model) =
   model.bufferIds.setLen(len(model.accessors))
   model.textureIds.setLen(len(model.textures))
-  model.vertexArrayIds.setLen(len(model.primatives))
+  model.vertexArrayIds.setLen(len(model.primitives))
   model.animationState.setLen(len(model.animations))
 
   for node in model.nodes:
     if node.mesh < 0:
       continue
 
-    for primativeIndex in model.meshes[node.mesh].primatives:
-      let primative = model.primatives[primativeIndex]
+    for primitiveIndex in model.meshes[node.mesh].primitives:
+      let primitive = model.primitives[primitiveIndex]
 
       var vertexArrayId: GLuint
       glGenVertexArrays(1, vertexArrayId.addr)
       glBindVertexArray(vertexArrayId)
 
-      model.vertexArrayIds[primativeIndex] = vertexArrayId
+      model.vertexArrayIds[primitiveIndex] = vertexArrayId
 
-      model.bindBuffer(primative.attributes.position, GL_ARRAY_BUFFER, 0)
+      model.bindBuffer(primitive.attributes.position, GL_ARRAY_BUFFER, 0)
 
-      if primative.indices >= 0:
-        model.bindBuffer(primative.indices, GL_ELEMENT_ARRAY_BUFFER, -1)
-      if primative.attributes.color0 >= 0:
-        model.bindBuffer(primative.attributes.color0, GL_ARRAY_BUFFER, 1)
-      if primative.attributes.normal >= 0:
-        model.bindBuffer(primative.attributes.normal, GL_ARRAY_BUFFER, 2)
-      if primative.attributes.texcoord0 >= 0:
-        model.bindBuffer(primative.attributes.texcoord0, GL_ARRAY_BUFFER, 3)
+      if primitive.indices >= 0:
+        model.bindBuffer(primitive.indices, GL_ELEMENT_ARRAY_BUFFER, -1)
+      if primitive.attributes.color0 >= 0:
+        model.bindBuffer(primitive.attributes.color0, GL_ARRAY_BUFFER, 1)
+      if primitive.attributes.normal >= 0:
+        model.bindBuffer(primitive.attributes.normal, GL_ARRAY_BUFFER, 2)
+      if primitive.attributes.texcoord0 >= 0:
+        model.bindBuffer(primitive.attributes.texcoord0, GL_ARRAY_BUFFER, 3)
 
-      if primative.material >= 0:
-        let material = model.materials[primative.material]
+      if primitive.material >= 0:
+        let material = model.materials[primitive.material]
         if material.pbrMetallicRoughness.apply:
           if material.pbrMetallicRoughness.baseColorTexture.index >= 0:
-            model.bindTexture(primative.material)
+            model.bindTexture(primitive.material)
 
 proc clearFromGpu*(model: Model) =
   glDeleteVertexArrays(
@@ -704,46 +704,46 @@ proc loadModel*(file: string): Model =
 
     for entry in entry["primitives"]:
       var
-        primative = Primative()
+        primitive = Primitive()
         attributes = entry["attributes"]
 
       if attributes.hasKey("POSITION"):
-        primative.attributes.position = attributes["POSITION"].getInt()
+        primitive.attributes.position = attributes["POSITION"].getInt()
       else:
-        primative.attributes.position = -1
+        primitive.attributes.position = -1
 
       if attributes.hasKey("NORMAL"):
-        primative.attributes.normal = attributes["NORMAL"].getInt()
+        primitive.attributes.normal = attributes["NORMAL"].getInt()
       else:
-        primative.attributes.normal = -1
+        primitive.attributes.normal = -1
 
       if attributes.hasKey("COLOR_0"):
-        primative.attributes.color0 = attributes["COLOR_0"].getInt()
+        primitive.attributes.color0 = attributes["COLOR_0"].getInt()
       else:
-        primative.attributes.color0 = -1
+        primitive.attributes.color0 = -1
 
       if attributes.hasKey("TEXCOORD_0"):
-        primative.attributes.texcoord0 = attributes["TEXCOORD_0"].getInt()
+        primitive.attributes.texcoord0 = attributes["TEXCOORD_0"].getInt()
       else:
-        primative.attributes.texcoord0 = -1
+        primitive.attributes.texcoord0 = -1
 
       if entry.hasKey("indices"):
-        primative.indices = entry["indices"].getInt()
+        primitive.indices = entry["indices"].getInt()
       else:
-        primative.indices = -1
+        primitive.indices = -1
 
       if entry.hasKey("material"):
-        primative.material = entry["material"].getInt()
+        primitive.material = entry["material"].getInt()
       else:
-        primative.material = -1
+        primitive.material = -1
 
       if entry.hasKey("mode"):
-        primative.mode = entry["mode"].getInt().GLenum
+        primitive.mode = entry["mode"].getInt().GLenum
       else:
-        primative.mode = GL_TRIANGLES
+        primitive.mode = GL_TRIANGLES
 
-      result.primatives.add(primative)
-      mesh.primatives.add(len(result.primatives) - 1)
+      result.primitives.add(primitive)
+      mesh.primitives.add(len(result.primitives) - 1)
 
     result.meshes.add(mesh)
 
