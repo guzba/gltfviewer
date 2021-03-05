@@ -341,9 +341,9 @@ proc draw(
     projUniform = glGetUniformLocation(shader, "proj")
 
   var
-    modelArray = trs.toFloat32()
-    viewArray = view.toFloat32()
-    projArray = proj.toFloat32()
+    modelArray = trs
+    viewArray = view
+    projArray = proj
 
   glUniformMatrix4fv(modelUniform, 1, GL_FALSE, modelArray[0].addr)
   glUniformMatrix4fv(viewUniform, 1, GL_FALSE, viewArray[0].addr)
