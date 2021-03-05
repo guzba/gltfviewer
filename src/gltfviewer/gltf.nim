@@ -1,13 +1,9 @@
-import base64, json, nimPNG, opengl, os, strformat, strutils, vmath
+import base64, json, pixie, opengl, os, strformat, strutils, vmath
 
 type
   BufferView = object
     buffer: int
     byteOffset, byteLength, byteStride: Natural
-
-  Image = object
-    width, height: int
-    data: string
 
   Texture = object
     source: Natural
@@ -440,11 +436,11 @@ proc bindTexture(model: Model, materialIndex: Natural) =
   glTexImage2D(
     GL_TEXTURE_2D,
     0,
-    GL_RGB.GLint,
+    GL_RGBA.GLint,
     image.width.GLint,
     image.height.GLint,
     0,
-    GL_RGB,
+    GL_RGBA,
     GL_UNSIGNED_BYTE,
     image.data[0].addr
   )
@@ -554,23 +550,17 @@ proc loadModel*(file: string): Model =
 
   if jsonRoot.hasKey("images"):
     for entry in jsonRoot["images"]:
-      var image = Image()
-
-      var png: PNGResult
+      var image: Image
       if entry.hasKey("uri"):
         let uri = entry["uri"].getStr()
         if uri.startsWith("data:image/png"):
-          png = decodePNG24(decode(uri.split(',')[1]))
+          image = decodeImage(decode(uri.split(',')[1]))
         elif uri.endsWith(".png"):
-          png = loadPNG24(joinPath(modelDir, uri))
+          image = readImage(joinPath(modelDir, uri))
         else:
           raise newException(Exception, &"Unsupported file extension {uri}")
       else:
         raise newException(Exception, "Unsupported image type")
-
-      image.width = png.width
-      image.height = png.height
-      image.data = png.data
 
       result.images.add(image)
 

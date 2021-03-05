@@ -13,7 +13,8 @@ var
   mousePos, mousePosPrev, mouseDelta: Vec2
   mouseClicked: bool
   hpr: Vec3
-  mouseWheelDelta, zoom = 40.0
+  zoom = -140.0
+  mouseWheelDelta = 40.0
   view, proj: Mat4
   startTime: float
 
