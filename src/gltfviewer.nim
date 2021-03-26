@@ -126,8 +126,8 @@ while windowShouldClose(window) == 0:
 
   let transform = translate(vec3(0, 0, -zoom)) * rotateX(hpr.y) * rotateY(hpr.x)
 
-  view = identity()
-  proj = perspective(45, framebufferWidth / framebufferHeight, 0.1, 1000)
+  view = mat4()
+  proj = perspective(45.float32, framebufferWidth / framebufferHeight, 0.1, 1000)
 
   model.advanceAnimations(epochTime() - startTime)
   model.draw(shader, transform, view, proj)

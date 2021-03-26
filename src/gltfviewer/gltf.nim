@@ -341,9 +341,9 @@ proc draw(
     viewArray = view
     projArray = proj
 
-  glUniformMatrix4fv(modelUniform, 1, GL_FALSE, modelArray[0].addr)
-  glUniformMatrix4fv(viewUniform, 1, GL_FALSE, viewArray[0].addr)
-  glUniformMatrix4fv(projUniform, 1, GL_FALSE, projArray[0].addr)
+  glUniformMatrix4fv(modelUniform, 1, GL_FALSE, cast[ptr float32](modelArray.addr))
+  glUniformMatrix4fv(viewUniform, 1, GL_FALSE, cast[ptr float32](viewArray.addr))
+  glUniformMatrix4fv(projUniform, 1, GL_FALSE, cast[ptr float32](projArray.addr))
 
   for primitiveIndex in model.meshes[node.mesh].primitives:
     let primitive = model.primitives[primitiveIndex]
@@ -755,8 +755,9 @@ proc loadModel*(file: string): Model =
 
       let values = entry["matrix"]
       assert len(values) == 16
-      for i in 0..<16:
-        node.matrix[i] = values[i].getFloat()
+      for i in 0 ..< 4:
+        for j in 0 ..< 4:
+          node.matrix[i, j] = values[j * 4 + i].getFloat()
 
     if entry.hasKey("rotation"):
       let values = entry["rotation"]
