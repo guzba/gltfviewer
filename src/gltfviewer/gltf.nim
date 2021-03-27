@@ -451,6 +451,11 @@ proc bindTexture(model: Model, materialIndex: Natural) =
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, sampler.minFilter)
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, sampler.wrapS)
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, sampler.wrapT)
+  else:
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR)
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT)
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT)
 
   glGenerateMipmap(GL_TEXTURE_2D)
 
@@ -809,8 +814,6 @@ proc loadModelJson*(
 
 proc loadModelJsonFile*(file: string): Model =
   result = Model()
-
-  echo &"Loading {file}"
   let
     jsonRoot = parseJson(readFile(file))
     modelDir = splitPath(file)[0]
@@ -847,6 +850,7 @@ proc loadModelBinaryFile*(file: string): Model =
   loadModelJson(parseJson(jsonData), buffers=buffers)
 
 proc loadModel*(file: string): Model =
+  echo &"Loading {file}"
   if file.endsWith(".glb"):
     loadModelBinaryFile(file)
   else:

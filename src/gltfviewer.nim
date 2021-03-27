@@ -88,6 +88,10 @@ glDepthMask(GL_TRUE)
 glEnable(GL_DEPTH_TEST)
 glEnable(GL_MULTISAMPLE)
 
+glEnable(GL_CULL_FACE)
+glCullFace(GL_BACK)
+glFrontFace(GL_CCW)
+
 glClearColor(1, 1, 1, 1)
 
 # Load the first model while starting up
