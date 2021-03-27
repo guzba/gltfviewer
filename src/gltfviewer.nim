@@ -1,5 +1,5 @@
 import gltfviewer/gltf, gltfviewer/shaders, opengl, os, staticglfw, strformat,
-    times, vmath
+    times, vmath, strutils
 
 const
   vertShaderSrc = staticRead("gltfviewer/basic.vert")
@@ -18,9 +18,9 @@ var
   view, proj: Mat4
   startTime: float
 
-for kind, path in walkDir("models"):
-  if kind == pcDir:
-    models.add(splitPath(path)[1])
+for path in walkDirRec("models"):
+  if path.endsWith(".glb"): # or path.endsWith(".gltf"):
+    models.add(path)
 
 if len(models) == 0:
   raise newException(Exception, "No models found")
@@ -56,9 +56,7 @@ proc onKey(
     return
 
   model.clearFromGpu()
-  model = loadModel(joinPath(
-    "models", models[activeModel], "glTF", &"{models[activeModel]}.gltf"
-  ))
+  model = loadModel(models[activeModel])
   model.uploadToGpu()
 
 proc onMouseButton(
@@ -93,9 +91,7 @@ glEnable(GL_MULTISAMPLE)
 glClearColor(1, 1, 1, 1)
 
 # Load the first model while starting up
-model = loadModel(joinPath(
-  "models", models[activeModel], "glTF", &"{models[activeModel]}.gltf"
-))
+model = loadModel(models[activeModel])
 model.uploadToGpu()
 
 startTime = epochTime()

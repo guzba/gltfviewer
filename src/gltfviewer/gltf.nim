@@ -1,4 +1,4 @@
-import base64, json, pixie, opengl, os, strformat, strutils, vmath
+import base64, json, pixie, opengl, os, strformat, strutils, vmath, flatty/binny
 
 type
   BufferView = object
@@ -502,23 +502,26 @@ proc clearFromGpu*(model: Model) =
     glDeleteTextures(len(model.textureIds).GLint, model.textureIds[0].addr)
     model.textureIds.setLen(0)
 
-proc loadModel*(file: string): Model =
+proc loadModelJson*(
+    jsonRoot: JsonNode,
+    modelDir = "",
+    buffers: seq[string] = @[]
+  ): Model =
+
   result = Model()
 
-  echo &"Loading {file}"
-  let
-    jsonRoot = parseJson(readFile(file))
-    modelDir = splitPath(file)[0]
-
+  var bufferIndex = 0
   for entry in jsonRoot["buffers"]:
-    let uri = entry["uri"].getStr()
-
     var data: string
-    if uri.startsWith("data:application/octet-stream"):
-      data = decode(uri.split(',')[1])
+    if "uri" in entry:
+      let uri = entry["uri"].getStr()
+      if uri.startsWith("data:application/octet-stream"):
+        data = decode(uri.split(',')[1])
+      else:
+        data = readFile(joinPath(modelDir, uri))
     else:
-      data = readFile(joinPath(modelDir, uri))
-
+      data = buffers[bufferIndex][0 ..< entry["byteLength"].getInt()]
+      inc bufferIndex
     assert len(data) == entry["byteLength"].getInt()
     result.buffers.add(data)
 
@@ -559,6 +562,13 @@ proc loadModel*(file: string): Model =
           image = readImage(joinPath(modelDir, uri))
         else:
           raise newException(Exception, &"Unsupported file extension {uri}")
+      elif entry.hasKey("bufferView"):
+        let
+          bufferViewIndex = entry["bufferView"].getInt()
+          bv = result.bufferViews[bufferViewIndex]
+          ib = result.buffers[bv.buffer]
+          imageData = ib[bv.byteOffset ..< bv.byteOffset + bv.byteLength]
+        image = decodeImage(imageData)
       else:
         raise newException(Exception, "Unsupported image type")
 
@@ -796,3 +806,48 @@ proc loadModel*(file: string): Model =
     result.scenes.add(scene)
 
   result.scene = jsonRoot["scene"].getInt()
+
+proc loadModelJsonFile*(file: string): Model =
+  result = Model()
+
+  echo &"Loading {file}"
+  let
+    jsonRoot = parseJson(readFile(file))
+    modelDir = splitPath(file)[0]
+
+  return loadModelJson(jsonRoot, modelDir=modelDir)
+
+proc loadModelBinaryFile*(file: string): Model =
+  let
+    data = string(readFile(file))
+    magic = data.readUint32(0)
+    version = data.readUint32(4)
+    length = data.readUint32(8)
+
+  doAssert magic == 0x46546C67
+  doAssert version == 2
+  doAssert length.int == data.len
+
+  var
+    i = 12
+    jsonData: string
+    buffers: seq[string]
+  while i < data.len:
+    var
+      chunkLength = data.readUint32(i)
+      chunkType = data.readUint32(i+4)
+      chunkData = data.readStr(i+8, chunkLength.int)
+      isJson = chunkType == 0x4E4F534A
+    i += 8 + chunkLength.int
+    if isJson:
+      jsonData = chunkData
+    else:
+      buffers.add(chunkData)
+
+  loadModelJson(parseJson(jsonData), buffers=buffers)
+
+proc loadModel*(file: string): Model =
+  if file.endsWith(".glb"):
+    loadModelBinaryFile(file)
+  else:
+    loadModelJsonFile(file)
