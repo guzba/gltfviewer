@@ -92,7 +92,7 @@ glEnable(GL_CULL_FACE)
 glCullFace(GL_BACK)
 glFrontFace(GL_CCW)
 
-glClearColor(1, 1, 1, 1)
+glClearColor(0.1, 0.1, 0.1, 1.0)
 
 # Load the first model while starting up
 model = loadModel(models[activeModel])
