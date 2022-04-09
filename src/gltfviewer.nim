@@ -57,7 +57,7 @@ glEnable(GL_MULTISAMPLE)
 glCullFace(GL_BACK)
 glFrontFace(GL_CCW)
 
-glClearColor(0.1, 0.1, 0.1, 1.0)
+glClearColor(1, 1, 1, 1)
 
 # Load the first model while starting up
 model = loadModel(models[activeModel])

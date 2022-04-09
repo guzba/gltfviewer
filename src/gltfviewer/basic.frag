@@ -17,8 +17,5 @@ void main() {
     fragColor.rgb += normal;
   }
 
-  vec3 lightDir = normalize(vec3(1.0, 1.0, 1.0));
-  fragColor.rgb = fragColor.rgb * dot(lightDir, normal);
-
   fragColor.a = 1.0;
 }
