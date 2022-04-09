@@ -520,7 +520,7 @@ proc loadModelJson*(
     var data: string
     if "uri" in entry:
       let uri = entry["uri"].getStr()
-      if uri.startsWith("data:application/octet-stream"):
+      if uri.startsWith("data:application/"):
         data = decode(uri.split(',')[1])
       else:
         data = readFile(joinPath(modelDir, uri))
