@@ -1,5 +1,5 @@
 version       = "0.0.5"
-author        = "guzba"
+author        = "Ryan Oldenburg"
 description   = "An in-progress GLTF viewer."
 license       = "MIT"
 srcDir        = "src"
